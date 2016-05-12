@@ -1,0 +1,18 @@
+{
+	"name": "New Store",
+	"description": "A new store implementation",
+	"authors": [
+	],
+	"repository": {
+		"type": "git",
+		"url": "git://github.com/maier49/store-research.git"
+	},
+	"dependencies": {
+	},
+	"ignore": [
+		".*",
+		"tests"
+	],
+	"license": [ "BSD-3-Clause" ],
+	"moduleType": [ "amd" ]
+}
