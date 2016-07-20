@@ -1,7 +1,7 @@
 import { shouldRecurseInto, isEqual } from '../utils';
 import { OperationType, Operation, operationFactory } from './Operation';
 import { JsonPointer, pathFactory } from './JsonPointer';
-export interface Patch {
+export interface Patch<T> {
 	operations: Operation[];
 	apply: (target: any) => any;
 	toString: () => String;

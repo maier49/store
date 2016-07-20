@@ -17,19 +17,13 @@
 	],
 	"files": [
 		"./typings/index.d.ts",
-		"./src/patch/jsonPointer.ts",
-		"./src/patch/operation.ts",
-		"./src/patch/patch.ts",
-		"./src/store/Filter.ts",
-		"./src/store/Query.ts",
-		"./src/store/Range.ts",
-		"./src/store/Sort.ts",
-		"./src/store/Store.ts",
-		"./src/store/Tansaction.ts",
-		"./src/utils.ts",
+		"./src/main.ts",
+		"./tests/functional/all.ts",
 		"./tests/intern-local.ts",
+		"./tests/intern-saucelabs.ts",
 		"./tests/intern.ts",
-		"./tests/unit/all.ts",
-		"./tests/unit/store/filter.ts"
+		"./tests/support/Reporter.ts",
+		"./tests/support/util.ts",
+		"./tests/unit/all.ts"
 	]
 }

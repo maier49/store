@@ -1,11 +1,12 @@
 {
-	"name": "New Store",
-	"description": "A new store implementation",
+	"name": "dojo-store-prototype",
+	"description": "A prototype store",
 	"authors": [
 	],
+	"main": "dist/umd/main.js",
 	"repository": {
 		"type": "git",
-		"url": "git://github.com/maier49/store-research.git"
+		"url": "git://github.com/maier49/store.git"
 	},
 	"dependencies": {
 	},

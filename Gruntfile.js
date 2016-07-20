@@ -1,16 +1,9 @@
 module.exports = function (grunt) {
-
-
 	require('grunt-dojo2').initConfig(grunt, {
+		dtsGenerator: {
+			options: {
+				main: 'dojo-store-prototype/main'
+			}
+		}
 	});
-
-	grunt.registerTask('dev', [
-		'typings',
-		/*'tslint',*/
-		'clean:dev',
-		'ts:dev',
-		'updateTsconfig'
-	]);
-
 };
-

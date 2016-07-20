@@ -1,5 +1,5 @@
 {
-	"name": "Store Research",
+	"name": "dojo-store-prototype",
 	"dependencies": {
 		"@reactivex/RxJS": "npm:@reactivex/RxJS"
 	},

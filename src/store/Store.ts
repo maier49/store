@@ -2,8 +2,12 @@ import Query from './Query';
 import { Patch, diff, createPatch } from '../patch/Patch';
 import filterFactory, { Filter } from './Filter';
 import Promise from 'dojo-shim/Promise';
+import WeakMap from 'dojo-shim/WeakMap';
 import Map from 'dojo-shim/Map';
 import { after } from 'dojo-core/aspect';
+import { Observable } from 'rxjs/Observable';
+import { Observer } from 'rxjs/Observer';
+import { Subject } from 'rxjs/Subject';
 import request, { Response, RequestOptions } from 'dojo-core/request';
 import Evented from 'dojo-core/Evented';
 import { Sort, sortFactory } from './Sort';
@@ -11,7 +15,7 @@ import { StoreRange, rangeFactory } from './Range';
 import { QueryType } from './Query';
 import { Handle, EventObject } from 'dojo-core/interfaces';
 import { duplicate } from 'dojo-core/lang';
-import { Transaction, SimpleTransaction, batchUpdates } from './Transaction';
+import { Transaction, SimpleTransaction } from './Transaction';
 
 export type UpdateType = 'add' | 'update' | 'delete' | 'batch';
 
@@ -40,9 +44,6 @@ export interface ItemDeleted extends Update<any> {
 	index?: number;
 }
 
-export type ItemMap<T> = { [ index: string ]: { item: T, index: number } };
-export type SubscriberObj<T> = { onUpdate(updates: Update<T>[]): void}
-export type Subscriber<T> = { onUpdate(updates: Update<T>[]): void; } | ((updates: Update<T>[]) => void);
 
 function isFilter<T>(filterOrTest: Query<T> | ((item: T) => boolean)): filterOrTest is Filter<T> {
 	return typeof filterOrTest !== 'function' && (<Query<T>> filterOrTest).queryType === QueryType.Filter;
@@ -56,68 +57,54 @@ function isRange(query: Query<any>): query is Range<any> {
 	return query.queryType === QueryType.Range;
 }
 
-function isSubscriberObj<T>(subscriber: Subscriber<T>): subscriber is SubscriberObj<T> {
-	return Boolean((<any> subscriber).onUpdate);
-}
-
-export interface Store<T> extends Evented {
+export interface Store<T> {
 	get(...ids: string[]): Promise<T[]>;
 	getIds(...items: T[]): string[];
 	generateId(): Promise<string>;
 	add(...items: T[]): Promise<T[]>;
 	put(...items: T[]): Promise<T[]>;
-	put(...updates: Map<string, Patch>[]): Promise<T[]>;
+	patch(updates: Map<string, Patch>): Promise<T[]>;
 	delete(...ids: string[]): Promise<string[]>;
+	observe(...ids: string[]): Observable<T>;
+	observe(): Observable<Update<T>>;
 	release(): Promise<any>;
 	track(): Promise<any>;
 	fetch(...queries: Query<T>[]): Promise<T[]>;
 	filter(filter: Filter<T>): Store<T>;
 	filter(test: (item: T) => boolean): Store<T>;
-	getUpdateCallbck(): () => void;
+	getUpdateCallback(): () => void;
 	createFilter(): Filter<T>;
 	range(range: StoreRange<T>): Store<T>;
 	range(start: number, count: number): Store<T>;
 	sort(sort: Sort<T> | ((a: T, b: T) => number) | string, descending?: boolean): Store<T>;
-	transaction(): void;
+	transaction(): Transaction;
 }
 
 export interface StoreOptions<T, U extends Store<T>> {
 	source?: U;
 	queries?: Query<T>[];
 }
-export interface MemoryOptions<T, U extends Store<T>> extends StoreOptions<T, U> {
-	data?: T[];
-	map?: ItemMap<T>;
-	version?: number;
-}
-
-export interface RequestStoreOptions<T, U extends Store<T>> extends StoreOptions<T, U> {
-	target: string;
-	filterSerializer?: (filter: Filter<T>) => string;
-	sendPatches?: boolean;
-}
-
 
 export abstract class BaseStore<T, U extends BaseStore<T>> implements Store<T> {
 	protected source: U;
+	protected pauser: new Subject();
 	protected sourceHandles: Handle[];
 	protected queries: Query<T>[];
 	protected StoreClass: new (...args: any[]) => Store<T>;
-	protected subscribers: Subscriber<T>[];
 	protected getBeforePut: boolean;
-	protected map: ItemMap<T>;
+	protected map: Map<T>;
 	protected data: T[];
 	protected version: number;
 	protected isLive: boolean;
 	protected inTransaction: boolean;
-	protected pendingOperations: (() => void)[];
+	protected itemObservers: Map<string, Observer<T>[]>;
+	protected observers: Observer<Update<T>>[];
 
 	constructor(options?: StoreOptions<T, U>) {
 		options = options || {};
 		this.source = options.source;
 		this.queries = options.queries || [];
 		this.StoreClass = <any> this.constructor;
-		this.subscribers = [];
 		this.getBeforePut = true;
 		this.version = this.source ? this.source.version : 1;
 		this.inTransaction = false;
@@ -133,6 +120,7 @@ export abstract class BaseStore<T, U extends BaseStore<T>> implements Store<T> {
 	protected abstract _put(...itemsOrPatches: (T | Map<string, Patch>)[]): Promise<ItemUpdated<T>[]>;
 	protected abstract _add(items: T[], indices?: number[]): Promise<ItemAdded<T>[]>;
 	protected abstract _delete(ids: string[], index: number[]): Promise<ItemDeleted[]>;
+	protected abstract _patch(updates: Map<string, Patch>): Promise<ItemUpdated<T>[]>;
 	protected abstract handleUpdates(updates: Update<T>[]): void;
 	protected abstract isUpdate(item: T): Promise<boolean>;
 
@@ -182,48 +170,46 @@ export abstract class BaseStore<T, U extends BaseStore<T>> implements Store<T> {
 		}
 	}
 
-	put(...itemsOrPatches: (T[] | Map<string, Patch>)[]) {
+	put(...items: T[]) {
+		const self: BaseStore<T, any> = this;
 		if (this.source) {
-			return this.source.put(itemsOrPatches);
+			return this.source.put(items);
+		} else {
+			if (typeof this.version !== 'undefined') {
+				this.version++;
+			}
+            var isUpdate = Observable.fromCallback((item: T) => this.isUpdate(item));
+
+            const updatesOrAdds = Observable.for(items, item => isUpdate(<T> item));
+            return Promise.all([
+				updatesOrAdds
+					.where(x => x)
+					.toArray()
+					.toPromise()
+					.then(items => self._put(items))
+					.then(updates => self.sendItemUpdates(updates)),
+                updatesOrAdds
+					.where(x => !x)
+					.toArray()
+					.toPromise()
+					.then(items => self._add(items))
+            ])
+                .then((updateLists: (ItemUpdated<T> | ItemAdded<T>)[][]) => updateLists.reduce((prev, next) => [...prev, ...next]))
+                .then(updates => self.sendStoreUpdates(updates).map(update => update.item))
+		}
+	}
+
+	patch(updates: Map<string, Patch>) {
+		const self: BaseStore<T, any> = this;
+		if (this.source) {
+			return this.source.patch(updates);
 		} else {
 			if (typeof this.version !== 'undefined') {
 				this.version++;
 			}
 
-			const areItems = itemsOrPatches.length && itemsOrPatches[0].toString() !== 'Map';
-			if (!areItems) {
-				return this._put(itemsOrPatches);
-			} else {
-				let transaction: Transaction<T, U> = this.transaction();
-				return Promise.all(batchUpdates<U, () => Promise<T[]>(this, itemsOrPatches.map(function(itemOrPatch): Promise<T[]> {
-					return () => {
-						let promise:Promise<any>;
-						if (areItems) {
-							promise = this.isUpdate(<T> itemOrPatch);
-						} else {
-							promise = Promise.resolve(itemOrPatch);
-						}
-
-						return promise.then(function (isUpdate:any): Promise<T[]> {
-							if (isUpdate) {
-								return this._put(itemOrPatch).then(function (results: ItemUpdated<T>[]) {
-									return results.map(function(result) {
-										return result.item;
-									});
-								});
-							} else {
-								return this._add(<T> itemOrPatch).then(function (results: ItemAdded<T>[]) {
-									return results.map(function(result) {
-										return result.item;
-									});
-								});
-							}
-						});
-					};
-				}))).then(function(itemArrays: T[][]) {
-					return itemArrays.reduce((prev, next) => [ ...prev, ...next ]);
-				});
-			}
+			return this._patch(updates)
+				.then(updates => self.sendStoreUpdates(self.sendItemUpdates(updates)).map(update => update.item));
 		}
 	}
 
@@ -234,11 +220,8 @@ export abstract class BaseStore<T, U extends BaseStore<T>> implements Store<T> {
 			if (typeof this.version !== 'undefined') {
 				this.version++;
 			}
-			return this._add(...items).then(function(results) {
-				return results.map(function(result) {
-					return result.item;
-				});
-			});
+			return this._add(...items)
+				.then(updates => self.sendStoreUpdates(self.sendItemUpdates(updates)).map(update => update.item));
 		}
 	}
 
@@ -373,267 +356,24 @@ export abstract class BaseStore<T, U extends BaseStore<T>> implements Store<T> {
 			queries: this.queries
 		};
 	}
-}
 
-export class MemoryStore<T> extends BaseStore<T, MemoryStore<T>> {
-
-	constructor(options?: MemoryOptions<T, MemoryStore<T>>) {
-		super();
-		this.data = options.data || [];
-		if (!this.source) {
-			this.map = options.map || {};
-			this.buildMap(this.data, this.map);
-		}
-	}
-
-	_get(...ids: string[]): Promise<T[]> {
-		return Promise.resolve(ids.map(function(id: string) {
-			return duplicate(this.map[id].item);
-		}))
-	}
-
-	_put(itemsOrPatches: (T | Map<string, Patch>)[]): Promise<ItemUpdated<T>[]> {
-		const self = this;
-		const areItems = itemsOrPatches[0] && itemsOrPatches[0].toString() !== 'Map';
-		let updates: ItemUpdated<T>[];
-		const hasRangeQuery = (this.source && this.queries.some(isRange));
-		if (areItems) {
-			updates = (<T[]> itemsOrPatches).map(function(item) {
-				const id = this.getIds(item)[0];
-				const mapEntry = this.map[id];
-				const oldItem = mapEntry.item;
-				const oldIndex = mapEntry.index;
-				const _diff = () => diff(oldItem, item);
-
-				this.data[mapEntry.index] = item;
-				return <ItemUpdated<T>> {
-					item: item,
-					oldINdex: oldIndex,
-					diff: _diff,
-					type: 'update'
-				};
-			}, this)
-		} else {
-			const patchMap: Map<string, Patch> = (<Map<string, Patch>[]> itemsOrPatches).reduce((prev, next: Map<string, Patch>) => {
-				next.keys().forEach(function(key) {
-					if (prev.has(key)) {
-						prev.put(key, createPatch([ ...prev.get(key).operations, ...next.get(key).operations ]));
-					} else {
-						prev.put(key, next.get(key));
-					}
-				});
-				return prev;
-			}, new Map<string, Patch>());
-
-			updates = patchMap.keys().map(function(id) {
-				const mapEntry = this.map[id];
-				const oldIndex: number = mapEntry.index;
-				const patch = patchMap.get(id);
-				const item:T = hasRangeQuery ? this.source.map.get(id).item : patch.apply(mapEntry.item);
-				const _diff = () =>  patchMap.get(id);
-
-				this.data[mapEntry.index] = mapEntry.item = item;
-				return <ItemUpdated<T>> {
-					item: item,
-					oldIndex: oldIndex,
-					diff: _diff,
-					type: 'update'
-				};
-			}, this);
-		}
-
-		let newData: Promise<T[]>;
-		if (hasRangeQuery) {
-			newData = this.source.fetch(this.queries)
-		} else {
-			newData = this._fetch(this.queries);
-		}
-		return newData.then(function(data: T[]) {
-			self.data = data;
-			return this.buildMap(this.data).then(function(map) {
-				self.map = map;
-				return updates.map(function(update) {
-					const id = self.getId(update.item);
-					if (map.has(id) {
-						update.index = map.get(id).index;
-					}
-					return update
-				}, self);
-			})
-		});
-	}
-
-	createFilter() {
-		return filterFactory<T>();
-	}
-
-	getId(item: T) {
-		return Promise.resolve((<any> item).id);
-	}
-
-	generateId() {
-		return Promise.resolve('' + Math.random());
-	}
-
-	_add(item: T, index?: number): Promise<ItemAdded<T>> {
-		return this.getId(item).then(function(id) {
-			if (this.map[id]) {
-				throw new Error('Item added to collection item with duplicate ID');
-			}
-			this.collection.push(item);
-			this.map[id] = { item: item, index: this.collection.length - 1};
-
-			return {
-				item: this.map[id].item,
-				index: this.map[id].index,
-				type: 'add'
-			};
-		});
-	}
-
-	_getOptions(): MemoryOptions<T, MemoryStore<T>> {
-		return {
-			version: this.version
+	protected sendStoreUpdates<T, U extends Update<T>>(updates: U[]): U[] {
+		const batchUpdate: BatchUpdate<T> = {
+			type: 'batch',
+			updates: updates
 		};
+		this.observers.forEach(observer => observer.next(batchUpdate));
+		return updates;
 	}
 
-	_delete(id: string, index?: number): Promise<ItemDeleted> {
-		this.version++;
-		const mapEntry = this.map[id];
-		delete this.map[id];
-		this.collection.splice(mapEntry.index, 1);
-		this.buildMap(this.collection.slice(mapEntry.index), this.map);
-
-		return Promise.resolve({
-			id: id,
-			index: mapEntry.index,
-			type: 'delete'
-		});
-	}
-
-	handleUpdates(updates: Update<T>[]) {
-	}
-
-	_isUpdate(item: T) {
-		return this.getId(item).then(function(id: string) {
-			return this.map[id];
-		}.bind(this));
-	}
-
-	_fetch(...queries: Query<T>[]) {
-		return Promise.resolve(this.queries.reduce((prev, next) => next.apply(prev), this.data));
-	}
-}
-
-export class RequestStore<T> extends BaseStore<T, RequestStore<T>> {
-	private target: string;
-	private filterSerializer: (filter: Filter<T>) => string;
-	private sendPatches: boolean;
-
-	constructor(options: RequestStoreOptions<T, RequestStore<T>>) {
-		super();
-		this.target = options.target;
-		this.filterSerializer = options.filterSerializer;
-		this.sendPatches = Boolean(options.sendPatches);
-	}
-
-	createFilter() {
-		return filterFactory(this.filterSerializer);
-	}
-
-	fetch(): Promise<T[]> {
-		const filterString = this.queries.reduce((prev: Filter<T>, next: Query<T>) => {
-			if (isFilter(next)) {
-				return prev ? prev.and(next) : next;
-			} else {
-				return prev;
+	protected sendItemUpdates(updates: (ItemUpdated<T> | ItemAdded<T>)[]) {
+		const items = updates.map(update => update.item);
+		const ids = this.getIds(...items);
+		ids.forEach((id, index) => {
+			if (this.itemObservers.has(id)) {
+				this.itemObservers.get(id).forEach(observer => observer.next(items[index]));
 			}
-		}, null).toString();
-		return request.get(this.target + '?' + filterString).then(function(response: Response<string>) {
-			return JSON.parse(response.data);
 		});
+		return updates;
 	}
-
-	getId(item: T): Promise<string> {
-		return Promise.resolve((<any> item).id);
-	}
-
-	generateId(): Promise<string> {
-		return Promise.resolve('' + Math.random());
-	}
-
-	protected _get(id: string): Promise<T> {
-		return Promise.resolve(null);
-	}
-
-	protected _put(itemOrId: String|T, patch?: Patch): Promise<ItemUpdated<T>> {
-		let idPromise: Promise<string> = (patch ? Promise.resolve(<string> itemOrId) : this.getId(<T> itemOrId));
-		return idPromise.then(function(id: string) {
-			let requestOptions: RequestOptions;
-			if (patch && this.sendPatches) {
-				requestOptions = {
-					method: 'patch',
-					data: patch.toString(),
-					headers: {
-						'Content-Type': 'application/json'
-					}
-				};
-			} else {
-				requestOptions = {
-					method: 'put',
-					data: JSON.stringify(itemOrId),
-					headers: {
-						'Content-Type': 'application/json'
-					}
-				};
-			}
-			return request<string>(this.target + id, requestOptions).then(function(response) {
-				const item = JSON.parse(response.data);
-				const oldItem: T = patch ? null : <T> itemOrId;
-				return {
-					item: item,
-					type: UpdateType.Updated,
-					diff: () => patch ? patch : diff(oldItem, item)
-				};
-			});
-		}.bind(this));
-	}
-
-	protected _add(item: T, index?: number): Promise<ItemAdded<T>> {
-		return request.post<string>(this.target, {
-			data: JSON.stringify(item),
-			headers: {
-				'Content-Type': 'application/json'
-			}
-		}).then(function(response) {
-			return {
-				item: JSON.parse(response.data),
-				type: UpdateType.Added
-			};
-		});
-	}
-
-	protected _getOptions(): RequestStoreOptions<T, RequestStore<T>> {
-		return {
-			target: this.target,
-			filterSerializer: this.filterSerializer,
-			sendPatches: this.sendPatches
-		};
-	}
-
-	protected _delete(id: string, index?: number): Promise<ItemDeleted> {
-		return  Promise.resolve({
-			id: id,
-			index: index,
-			type: UpdateType.Deleted
-		});
-	}
-
-	protected _handleUpdate(update: Update<T>): void {
-	}
-
-	protected _isUpdate(item: T): Promise<boolean> {
-		return Promise.resolve(false);
-	}
-
 }
