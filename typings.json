@@ -1,7 +1,7 @@
 {
 	"name": "dojo-store-prototype",
 	"dependencies": {
-		"@reactivex/RxJS": "npm:@reactivex/RxJS"
+		"@reactivex/RxJS": "npm:@reactivex/rxjs"
 	},
 	"globalDependencies": {
 		"dojo-compose": "npm:dojo-compose",
