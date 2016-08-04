@@ -7,7 +7,6 @@ export interface Patch<T> {
 	toString: () => String;
 }
 
-
 function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	if (!shouldRecurseInto(from) || !shouldRecurseInto(to)) {
 		return [];
@@ -38,7 +37,7 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	return operations;
 }
 
-export function diff(from: any, to: any): Patch {
+export function diff(from: any, to: any): Patch<any> {
 	return createPatch(_diff(from, to));
 }
 

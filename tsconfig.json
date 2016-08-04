@@ -17,13 +17,21 @@
 	],
 	"files": [
 		"./typings/index.d.ts",
-		"./src/main.ts",
-		"./tests/functional/all.ts",
+		"./src/patch/jsonPointer.ts",
+		"./src/patch/Operation.ts",
+		"./src/patch/Patch.ts",
+		"./src/store/filter.ts",
+		"./src/store/MemoryStore.ts",
+		"./src/store/query.ts",
+		"./src/store/range.ts",
+		"./src/store/RequestStore.ts",
+		"./src/store/sort.ts",
+		"./src/store/Store.ts",
+		"./src/store/Transaction.ts",
+		"./src/utils.ts",
 		"./tests/intern-local.ts",
-		"./tests/intern-saucelabs.ts",
 		"./tests/intern.ts",
-		"./tests/support/Reporter.ts",
-		"./tests/support/util.ts",
-		"./tests/unit/all.ts"
+		"./tests/unit/all.ts",
+		"./tests/unit/store/filter.ts"
 	]
 }

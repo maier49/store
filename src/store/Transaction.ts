@@ -1,24 +1,23 @@
-import { Store, BaseStore, Update } from './Store';
+import { Store } from './Store';
 import { Patch } from '../patch/Patch';
 import Promise from 'dojo-shim/Promise';
-import { Observer } from 'rxjs/Observer';
-import { Handle } from 'dojo-core/interfaces';
-import { around } from 'dojo-core/aspect';
+import Map from 'dojo-shim/Map';
+import { Subject } from '@reactivex/RxJS';
 
-export interface Transaction<T, U> {
-	abort(): Store<T>
+export interface Transaction<T> {
+	abort(): Store<T>;
 	commit(): Promise<Store<T>>;
-	add(...items: T[]): Transaction<T, U>;
-	put(...items: T[]): Transaction<T, U>;
-	patch(updates: Map<string, Patch>): Transaction<T, U>;
-	delete(...ids: string[]): Transaction<T, U>;
+	add(...items: T[]): Transaction<T>;
+	put(...items: T[]): Transaction<T>;
+	patch(updates: Map<string, Patch<T>>): Transaction<T>;
+	delete(...ids: string[]): Transaction<T>;
 }
 
-export class SimpleTransaction<T> implements Transaction<T, U> {
+export class SimpleTransaction<T> implements Transaction<T> {
 	protected store: Store<T>;
-	protected pause: Observer<any>;
+	protected pause: Subject<any>;
 	protected actions: (() => void)[];
-	constructor(store: Store<T>, pause: Observer<any>) {
+	constructor(store: Store<T>, pause: Subject<any>) {
 		this.actions = [];
 		this.store = store;
 		this.pause = pause;
@@ -29,7 +28,7 @@ export class SimpleTransaction<T> implements Transaction<T, U> {
 		return this;
 	}
 
-	patch(updates: Map<string, Patch>) {
+	patch(updates: Map<string, Patch<T>>) {
 		this.actions.push(() => this.store.patch(updates));
 		return this;
 	}
@@ -39,16 +38,15 @@ export class SimpleTransaction<T> implements Transaction<T, U> {
 		return this;
 	}
 
-
 	delete(...ids: string[]) {
 		this.actions.push(() => this.store.delete(...ids));
 		return this;
 	}
 
 	commit() {
-		this.pause.onNext(false);
+		this.pause.next(false);
 		return Promise.all(this.actions.map(action => action())).then(function() {
-			this.pause.onNext(true);
+			this.pause.next(true);
 			return this.store;
 		}.bind(this));
 	}
