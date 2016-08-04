@@ -1,8 +1,10 @@
-import Query, { QueryType } from './query';
-export interface StoreRange<T> extends Query<T> {
+import Query, { QueryType } from './Query';
+interface StoreRange<T> extends Query<T> {
 	start: number;
 	count: number;
 }
+
+export default StoreRange;
 
 export function rangeFactory<T>(start: number, count: number, serializer?: (range: StoreRange<T>) => string): StoreRange<T> {
 	return {

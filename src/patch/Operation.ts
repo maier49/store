@@ -1,5 +1,5 @@
 import { isEqual } from '../utils';
-import { JsonPointer, pathFactory } from './JsonPointer';
+import JsonPointer, { pathFactory } from './JsonPointer';
 export const enum OperationType {
 	Add,
 	Remove,
@@ -9,12 +9,14 @@ export const enum OperationType {
 	Test
 }
 
-export interface Operation {
+interface Operation {
 	op: string;
 	path: JsonPointer;
 	toString: () => string;
 	apply: (target: any) => any;
 }
+
+export default Operation;
 
 export interface Add extends Operation {
 	value: any;

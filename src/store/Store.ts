@@ -1,12 +1,12 @@
 import Query from './Query';
-import { Patch } from '../patch/Patch';
-import { Filter } from './Filter';
+import Patch from '../patch/Patch';
+import Filter from './Filter';
 import Promise from 'dojo-shim/Promise';
 import Map from 'dojo-shim/Map';
 import { Observer, Observable, Subject, Subscription } from '@reactivex/RxJS';
 import { of } from '@reactivex/RxJS/dist/cjs/observable/of';
 import { Sort, sortFactory } from './Sort';
-import { StoreRange, rangeFactory } from './Range';
+import StoreRange, { rangeFactory } from './StoreRange';
 import { QueryType } from './Query';
 import { duplicate } from 'dojo-core/lang';
 import { Transaction, SimpleTransaction } from './Transaction';

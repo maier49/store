@@ -1,11 +1,12 @@
 import { shouldRecurseInto, isEqual } from '../utils';
-import { OperationType, Operation, operationFactory } from './Operation';
-import { JsonPointer, pathFactory } from './JsonPointer';
-export interface Patch<T> {
+import Operation, { OperationType, operationFactory } from './Operation';
+import JsonPointer, { pathFactory } from './JsonPointer';
+interface Patch<T> {
 	operations: Operation[];
 	apply: (target: any) => any;
 	toString: () => String;
 }
+export default Patch;
 
 function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	if (!shouldRecurseInto(from) || !shouldRecurseInto(to)) {

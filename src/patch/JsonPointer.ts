@@ -1,8 +1,9 @@
-export interface JsonPointer {
+interface JsonPointer {
 	segments: () => string[];
 	toString: () => string;
 	add: (segment: String) => JsonPointer;
 }
+export default JsonPointer;
 
 export function navigate(path: JsonPointer, target: any) {
 	return path.segments().reduce((prev: any, next: string) => prev ? prev[next] : prev, target);

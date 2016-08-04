@@ -1,5 +1,5 @@
 import { Store } from './Store';
-import { Patch } from '../patch/Patch';
+import Patch from '../patch/Patch';
 import Promise from 'dojo-shim/Promise';
 import Map from 'dojo-shim/Map';
 import { Subject } from '@reactivex/RxJS';

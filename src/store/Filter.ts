@@ -1,6 +1,6 @@
-import { JsonPointer, navigate, pathFactory } from '../patch/JsonPointer';
+import JsonPointer, { navigate, pathFactory } from '../patch/JsonPointer';
 import { isEqual } from '../utils';
-import Query, { QueryType } from './query';
+import Query, { QueryType } from './Query';
 
 export type FilterFunction<T> = (data: T[]) => T[];
 export type ObjectPointer = JsonPointer | string;
@@ -51,6 +51,7 @@ export interface BooleanFilter<T> extends SimpleFilter<T> {
 	notDeepEqualTo<U>(path: ObjectPointer, value: U[]): Filter<T>;
 	custom(test: (item: T) => boolean): Filter<T>;
 }
+
 export interface Filter<T> extends BooleanFilter<T> {
 	and(filter: Filter<T>): Filter<T>;
 	and(): BooleanFilter<T>;
@@ -58,11 +59,13 @@ export interface Filter<T> extends BooleanFilter<T> {
 	or(): BooleanFilter<T>;
 }
 
+export default Filter;
+
 function isFilter<T>(filterOrFunction: FilterChainMember<T>): filterOrFunction is Filter<T> {
 	return typeof filterOrFunction !== 'function'  && (<any> filterOrFunction).apply;
 }
 
-export default function filterFactory<T>(serializer?: (filter: Filter<T>) => string): Filter<T> {
+export function filterFactory<T>(serializer?: (filter: Filter<T>) => string): Filter<T> {
 	// var subFilters: NestedFilter<T> = subFilters || [];
 	let filters: FilterChainMember<T>[] = [];
 	serializer = serializer || serializeFilter;
