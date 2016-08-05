@@ -31,7 +31,10 @@
 		"./src/store/Transaction.ts",
 		"./src/utils.ts",
 		"./tests/intern-local.ts",
+		"./tests/intern-saucelabs.ts",
 		"./tests/intern.ts",
+		"./tests/support/Reporter.ts",
+		"./tests/support/util.ts",
 		"./tests/unit/all.ts",
 		"./tests/unit/store/filter.ts"
 	]

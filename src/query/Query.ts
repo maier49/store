@@ -12,6 +12,8 @@ export const enum QueryType {
 	Compound
 }
 
+export default Query;
+
 export class CompoundQuery<T, U> implements Query<T, U> {
 	queryType = QueryType.Compound;
 	private queries: Query<any, any>[];
@@ -44,5 +46,3 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 		return newQuery;
 	}
 }
-
-export default Query;
