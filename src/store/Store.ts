@@ -1,13 +1,13 @@
-import Query, { CompoundQuery } from './Query';
+import Query, { CompoundQuery } from '../query/Query';
 import Patch from '../patch/Patch';
-import Filter from './Filter';
+import Filter from '../query/Filter';
 import Promise from 'dojo-shim/Promise';
 import Map from 'dojo-shim/Map';
 import { Observer, Observable, Subject, Subscription } from '@reactivex/RxJS';
 import { of } from '@reactivex/RxJS/dist/cjs/observable/of';
-import { Sort, sortFactory } from './Sort';
-import StoreRange, { rangeFactory } from './StoreRange';
-import { QueryType } from './Query';
+import { Sort, createSort } from '../query/Sort';
+import StoreRange, { rangeFactory } from '../query/StoreRange';
+import { QueryType } from '../query/Query';
 import { duplicate } from 'dojo-core/lang';
 import { Transaction, SimpleTransaction } from './Transaction';
 
@@ -305,7 +305,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		if (isSort(sortOrComparator)) {
 			sort = sortOrComparator;
 		} else {
-			sort = sortFactory(sortOrComparator, descending);
+			sort = createSort(sortOrComparator, descending);
 		}
 
 		return this.query(sort);

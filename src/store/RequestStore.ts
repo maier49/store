@@ -1,6 +1,6 @@
 // import Query from './Query';
 // import { Patch, diff } from '../patch/Patch';
-// import filterFactory, { Filter } from './Filter';
+// import createFilter, { Filter } from './Filter';
 // import { Store, BaseStore, StoreOptions } from './Store';
 // import Promise from 'dojo-shim/Promise';
 // import request, { Response, RequestOptions } from 'dojo-core/request';
@@ -24,7 +24,7 @@
 // 	}
 //
 // 	createFilter() {
-// 		return filterFactory(this.filterSerializer);
+// 		return createFilter(this.filterSerializer);
 // 	}
 //
 // 	fetch(): Promise<T[]> {

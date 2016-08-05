@@ -1,4 +1,4 @@
-import JsonPointer, { navigate, pathFactory } from '../patch/JsonPointer';
+import JsonPointer, { navigate, createPointer } from '../patch/JsonPointer';
 import { isEqual } from '../utils';
 import Query, { QueryType } from './Query';
 
@@ -29,11 +29,11 @@ export const enum BooleanOp {
 export type FilterChainMember<T> = (SimpleFilter<T> | BooleanOp);
 
 export interface SimpleFilter<T> extends Query<T, T> {
-	type: FilterType;
-	test?: (item: T) => boolean;
-	filterChain?: FilterChainMember<T>[];
-	path?: ObjectPointer;
-	value?: any;
+	readonly type: FilterType;
+	readonly test?: (item: T) => boolean;
+	readonly filterChain?: FilterChainMember<T>[];
+	readonly path?: ObjectPointer;
+	readonly value?: any;
 }
 export interface BooleanFilter<T> extends SimpleFilter<T> {
 	lessThan(path: ObjectPointer, value: number): Filter<T>;
@@ -65,24 +65,24 @@ function isFilter<T>(filterOrFunction: FilterChainMember<T>): filterOrFunction i
 	return typeof filterOrFunction !== 'function'  && (<any> filterOrFunction).apply;
 }
 
-export function filterFactory<T>(serializer?: (filter: Filter<T>) => string): Filter<T> {
+export function createFilter<T>(serializer?: (filter: Filter<T>) => string): Filter<T> {
 	// var subFilters: NestedFilter<T> = subFilters || [];
 	let filters: FilterChainMember<T>[] = [];
 	serializer = serializer || serializeFilter;
 
-	return filterFactoryHelper(filters, serializer);
+	return createFilterHelper(filters, serializer);
 }
 
-function filterFactoryHelper<T>(filters: FilterChainMember<T>[], serializer?: (filter: Filter<T>) => string): Filter<T> {
+function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (filter: Filter<T>) => string): Filter<T> {
 	// Small helpers to abstract common operations for building comparator filters
 	// The main helper delegates to the factory, adding and AND operation before the next filter,
 	// because by default each filter in a chain will be ANDed with the previous.
 	function comparatorFilterHelper(filterType: FilterType, value: any, path?: ObjectPointer): Filter<T> {
 		const needsOperator = filters.length > 0 &&
 			(filters[filters.length - 1] !== BooleanOp.And && filters[filters.length - 1] !== BooleanOp.Or);
-		const newFilters = needsOperator ? [ ...filters, BooleanOp.And, comparatorFactory<T>(filterType, value, path) ] :
-			[ ...filters, comparatorFactory<T>(filterType, value, path) ];
-		return filterFactoryHelper(newFilters, serializer);
+		const newFilters = needsOperator ? [ ...filters, BooleanOp.And, createComparator<T>(filterType, value, path) ] :
+			[ ...filters, createComparator<T>(filterType, value, path) ];
+		return createFilterHelper(newFilters, serializer);
 	}
 
 	const filter: Filter<T> = {
@@ -92,8 +92,8 @@ function filterFactoryHelper<T>(filters: FilterChainMember<T>[], serializer?: (f
 			return data.filter(this.test);
 		},
 		filterChain: filters,
-		toString() {
-			return serializer(this);
+		toString(filterSerializer?: ((query: Query<any, any>) => string) | ((filter: Filter<T>) => string)) {
+			return (filterSerializer || serializer)(this);
 		},
 		and(newFilter?: Filter<T>) {
 			let newFilters: FilterChainMember<T>[] = [];
@@ -102,7 +102,7 @@ function filterFactoryHelper<T>(filters: FilterChainMember<T>[], serializer?: (f
 			} else if (filters.length) {
 				newFilters.push(...filters, BooleanOp.And);
 			}
-			return filterFactoryHelper(newFilters, serializer);
+			return createFilterHelper(newFilters, serializer);
 		},
 		or(newFilter?: Filter<T>) {
 			let newFilters: FilterChainMember<T>[] = [];
@@ -111,7 +111,7 @@ function filterFactoryHelper<T>(filters: FilterChainMember<T>[], serializer?: (f
 			} else if (filters.length) {
 				newFilters.push(...filters, BooleanOp.Or);
 			}
-			return filterFactoryHelper(newFilters, serializer);
+			return createFilterHelper(newFilters, serializer);
 		},
 		lessThan: (path: ObjectPointer, value: number) => comparatorFilterHelper(FilterType.LessThan, value, path),
 		lessThanOrEqualTo: (path: ObjectPointer, value: number) => comparatorFilterHelper(FilterType.LessThanOrEqualTo, value, path),
@@ -162,8 +162,8 @@ function applyFilterChain<T>(item: T, filterChain: FilterChainMember<T>[]): bool
 	});
 }
 
-function comparatorFactory<T>(operator: FilterType, value: any, path?: ObjectPointer): SimpleFilter<T> {
-	path = typeof path === 'string' ? pathFactory(path) : path;
+function createComparator<T>(operator: FilterType, value: any, path?: ObjectPointer): SimpleFilter<T> {
+	path = typeof path === 'string' ? createPointer(path) : path;
 	let test: (property: any) => boolean;
 	let type: FilterType;
 	let operatorString: string;

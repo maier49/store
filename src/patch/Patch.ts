@@ -1,6 +1,6 @@
 import { shouldRecurseInto, isEqual } from '../utils';
-import Operation, { OperationType, operationFactory } from './Operation';
-import JsonPointer, { pathFactory } from './JsonPointer';
+import Operation, { OperationType, createOperation } from './Operation';
+import JsonPointer, { createPointer } from './JsonPointer';
 interface Patch<T, U> {
 	operations: Operation[];
 	apply: (target: T) => U;
@@ -13,7 +13,7 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	if (!shouldRecurseInto(from) || !shouldRecurseInto(to)) {
 		return [];
 	}
-	startingPath = startingPath || pathFactory();
+	startingPath = startingPath || createPointer();
 	const fromKeys = Object.keys(from);
 	const toKeys = Object.keys(to);
 	const operations: Operation[] = [];
@@ -21,18 +21,18 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	fromKeys.forEach((key) => {
 		if (!isEqual(from[key], to[key])) {
 			if (typeof from[key] !== 'undefined' && typeof to[key] === 'undefined') {
-				operations.push(operationFactory(OperationType.Remove, startingPath.add(key)));
+				operations.push(createOperation(OperationType.Remove, startingPath.push(key)));
 			} else if (shouldRecurseInto(from[key]) && shouldRecurseInto(to[key])) {
-				operations.push(..._diff(from[key], to[key], startingPath.add(key)));
+				operations.push(..._diff(from[key], to[key], startingPath.push(key)));
 			} else {
-				operations.push(operationFactory(OperationType.Replace, startingPath.add(key), to[key], null, from[key]));
+				operations.push(createOperation(OperationType.Replace, startingPath.push(key), to[key], null, from[key]));
 			}
 		}
 	});
 
 	toKeys.forEach((key) => {
 		if (typeof from[key] === 'undefined' && typeof to[key] !== 'undefined') {
-			operations.push(operationFactory(OperationType.Add, startingPath.add(key), to[key]));
+			operations.push(createOperation(OperationType.Add, startingPath.push(key), to[key]));
 		}
 	});
 

@@ -1,9 +1,16 @@
 import Query, { QueryType } from './Query';
-import JsonPointer, { navigate, pathFactory } from '../patch/JsonPointer';
+import JsonPointer, { navigate, createPointer } from '../patch/JsonPointer';
 
-export interface Sort<T> extends Query<T, T> {}
+export interface Sort<T> extends Query<T, T> {
+	readonly comparatorOrProperty: ((a: T, b: T) => number) | string | JsonPointer;
+	readonly descending?: boolean;
+}
 
-export function sortFactory<T>(comparatorOrProperty: ((a: T, b: T) => number) | string | JsonPointer, descending?: boolean): Sort<T> {
+export function createSort<T>(
+	comparatorOrProperty: ((a: T, b: T) => number) | string | JsonPointer,
+	descending?: boolean,
+	serializer?: (sort: Sort<T>) => string): Sort<T> {
+
 	const isFunction = typeof comparatorOrProperty === 'function';
 	let comparator: (a: T, b: T) => number;
 
@@ -12,7 +19,7 @@ export function sortFactory<T>(comparatorOrProperty: ((a: T, b: T) => number) | 
 	} else {
 		let pointer: JsonPointer;
 		if (typeof comparatorOrProperty === 'string') {
-			pointer = pathFactory(comparatorOrProperty);
+			pointer = createPointer(comparatorOrProperty);
 		} else {
 			pointer = <JsonPointer> comparatorOrProperty;
 		}
@@ -24,19 +31,24 @@ export function sortFactory<T>(comparatorOrProperty: ((a: T, b: T) => number) | 
 	}
 	return {
 		apply: (data: T[]) => data.sort(comparator),
+		comparatorOrProperty: comparatorOrProperty,
+		descending: descending,
 		queryType: QueryType.Sort,
-		toString() {
+		toString(sortSerializer: ((query: Query<any, any>) => string) | ((sort: Sort<T>) => string)) {
 			if (isFunction) {
 				throw Error('Cannot parse this sort type to an RQL query string');
 			}
-
-			return `Sort(${comparatorOrProperty}, ${descending ? '-' : '+'})`;
+			return (sortSerializer || serializer || serialize)(this);
 		}
 	};
 }
 
 function flip<T>(comparator: (a: T, b: T) => number) {
 	return (a: T, b: T) => -1 * comparator(a, b);
+}
+
+function serialize(sort: Sort<any>) {
+	return `Sort(${sort.comparatorOrProperty}, ${sort.descending ? '-' : '+'})`;
 }
 function sortValue(a: any, b: any) {
 	let comparison: number;

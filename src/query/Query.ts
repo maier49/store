@@ -1,6 +1,6 @@
 interface Query<T, U> {
 	apply(data: T[]): U[];
-	toString(): string;
+	toString(querySerializer?: (query: Query<any, any>) => string): string;
 	queryType: QueryType;
 }
 
@@ -8,6 +8,7 @@ export const enum QueryType {
 	Filter,
 	Sort,
 	Range,
+	Select,
 	Compound
 }
 
@@ -15,12 +16,12 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 	queryType = QueryType.Compound;
 	private queries: Query<any, any>[];
 	private finalQuery: Query<any, U>;
-	private queryStringBuilder: (queries: Query<any, any>[]) => string;
+	private queryStringBuilder: (query: CompoundQuery<any, any>) => string;
 
-	constructor(query: Query<T, U>, queryStringBuilder?: (queries: Query<any, any>[]) => string) {
+	constructor(query: Query<T, U>, queryStringBuilder?: (query: CompoundQuery<any, any>) => string) {
 		this.finalQuery = query;
 		this.queries = [];
-		this.queryStringBuilder = queryStringBuilder || (queries => queries.join(' ::: '));
+		this.queryStringBuilder = queryStringBuilder || (query => [ ...query.queries, query.finalQuery ].join('&'));
 	}
 
 	apply(data: T[]): U[] {
@@ -29,8 +30,8 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 		}, data));
 	}
 
-	toString(queryStringBuilder?: (queries: Query<any, any>[]) => string) {
-		return (queryStringBuilder || this.queryStringBuilder)([ ...this.queries, this.finalQuery ]);
+	toString(queryStringBuilder?: ((query: Query<any, any>) => string) | ((query: CompoundQuery<any, any>) => string)): string {
+		return (queryStringBuilder || this.queryStringBuilder)(this);
 	}
 
 	withQuery<V>(query: Query<U, V>): CompoundQuery<T, V> {

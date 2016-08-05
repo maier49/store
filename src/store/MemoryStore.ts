@@ -1,6 +1,6 @@
 // import Query from './Query';
 // import { Patch, diff, createPatch } from '../patch/Patch';
-// import filterFactory from './Filter';
+// import createFilter from './Filter';
 // import {Store, BaseStore, StoreOptions, ItemUpdated} from './Store';
 // import Promise from 'dojo-shim/Promise';
 // import Map from 'dojo-shim/Map';
@@ -105,7 +105,7 @@
 // 	}
 //
 // 	createFilter() {
-// 		return filterFactory<T>();
+// 		return createFilter<T>();
 // 	}
 //
 // 	getId(item: T) {

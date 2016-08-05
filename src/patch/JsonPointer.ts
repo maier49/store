@@ -1,7 +1,8 @@
 interface JsonPointer {
-	segments: () => string[];
-	toString: () => string;
-	add: (segment: String) => JsonPointer;
+	segments(): string[];
+	toString(): string;
+	push(segment: String): JsonPointer;
+	pop(): JsonPointer;
 }
 export default JsonPointer;
 
@@ -21,10 +22,11 @@ function toString(...segments: string[]): string {
 	return segments.reduce((prev, next) => prev + '/' + encode(next));
 }
 
-export function pathFactory(...segments: string[]): JsonPointer {
+export function createPointer(...segments: string[]): JsonPointer {
 	return {
 		segments: () => segments.map(segment => decode(segment)),
 		toString: () => toString(...segments),
-		add: (segment: string) => pathFactory(...segments.concat(segment))
+		push: (segment: string) => createPointer(...segments.concat(segment)),
+		pop: () => createPointer(...segments.slice(0, segments.length - 1))
 	};
 }
