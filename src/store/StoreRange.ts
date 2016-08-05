@@ -1,5 +1,5 @@
 import Query, { QueryType } from './Query';
-interface StoreRange<T> extends Query<T> {
+interface StoreRange<T> extends Query<T, T> {
 	start: number;
 	count: number;
 }

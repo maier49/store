@@ -9,7 +9,7 @@ export interface Transaction<T> {
 	commit(): Promise<Store<T>>;
 	add(...items: T[]): Transaction<T>;
 	put(...items: T[]): Transaction<T>;
-	patch(updates: Map<string, Patch<T>>): Transaction<T>;
+	patch(updates: Map<string, Patch<T, T>>): Transaction<T>;
 	delete(...ids: string[]): Transaction<T>;
 }
 
@@ -28,7 +28,7 @@ export class SimpleTransaction<T> implements Transaction<T> {
 		return this;
 	}
 
-	patch(updates: Map<string, Patch<T>>) {
+	patch(updates: Map<string, Patch<T, T>>) {
 		this.actions.push(() => this.store.patch(updates));
 		return this;
 	}

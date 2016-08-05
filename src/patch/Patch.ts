@@ -1,11 +1,12 @@
 import { shouldRecurseInto, isEqual } from '../utils';
 import Operation, { OperationType, operationFactory } from './Operation';
 import JsonPointer, { pathFactory } from './JsonPointer';
-interface Patch<T> {
+interface Patch<T, U> {
 	operations: Operation[];
-	apply: (target: any) => any;
+	apply: (target: T) => U;
 	toString: () => String;
 }
+
 export default Patch;
 
 function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
@@ -38,8 +39,8 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	return operations;
 }
 
-export function diff(from: any, to: any): Patch<any> {
-	return createPatch(_diff(from, to));
+export function diff<T, U>(from: T, to: U): Patch<T, U> {
+	return <Patch<T, U>> createPatch(_diff(from, to));
 }
 
 export function createPatch(operations: Operation[]) {

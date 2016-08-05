@@ -28,7 +28,7 @@ export const enum BooleanOp {
 
 export type FilterChainMember<T> = (SimpleFilter<T> | BooleanOp);
 
-export interface SimpleFilter<T> extends Query<T> {
+export interface SimpleFilter<T> extends Query<T, T> {
 	type: FilterType;
 	test?: (item: T) => boolean;
 	filterChain?: FilterChainMember<T>[];

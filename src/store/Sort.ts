@@ -1,7 +1,7 @@
 import Query, { QueryType } from './Query';
 import JsonPointer, { navigate, pathFactory } from '../patch/JsonPointer';
 
-export interface Sort<T> extends Query<T> {}
+export interface Sort<T> extends Query<T, T> {}
 
 export function sortFactory<T>(comparatorOrProperty: ((a: T, b: T) => number) | string | JsonPointer, descending?: boolean): Sort<T> {
 	const isFunction = typeof comparatorOrProperty === 'function';

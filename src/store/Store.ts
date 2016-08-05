@@ -1,4 +1,4 @@
-import Query from './Query';
+import Query, { CompoundQuery } from './Query';
 import Patch from '../patch/Patch';
 import Filter from './Filter';
 import Promise from 'dojo-shim/Promise';
@@ -30,7 +30,7 @@ export interface ItemAdded<T> extends Update<T> {
 
 export interface ItemUpdated<T> extends Update<T> {
 	item: T;
-	diff: () => Patch<T>;
+	diff: () => Patch<T, T>;
 	index?: number;
 	previousIndex?: number;
 }
@@ -40,8 +40,8 @@ export interface ItemDeleted extends Update<any> {
 	index?: number;
 }
 
-function isFilter<T>(filterOrTest: Query<T> | ((item: T) => boolean)): filterOrTest is Filter<T> {
-	return typeof filterOrTest !== 'function' && (<Query<T>> filterOrTest).queryType === QueryType.Filter;
+function isFilter<T>(filterOrTest: Query<any, any> | ((item: T) => boolean)): filterOrTest is Filter<T> {
+	return typeof filterOrTest !== 'function' && (<Query<any, any>> filterOrTest).queryType === QueryType.Filter;
 }
 
 function isSort<T>(sortOrComparator: Sort<T> | ((a: T, b: T) => number)): sortOrComparator is Sort<T> {
@@ -54,13 +54,14 @@ export interface Store<T> {
 	generateId(): Promise<string>;
 	add(...items: T[]): Promise<T[]>;
 	put(...items: T[]): Promise<T[]>;
-	patch(updates: Map<string, Patch<T>>): Promise<T[]>;
+	patch(updates: Map<string, Patch<T, T>>): Promise<T[]>;
 	delete(...ids: string[]): Promise<string[]>;
 	observe(): Observable<Update<T>>;
 	observe(ids: string | string[]): Observable<T | ItemDeleted>;
 	release(): Promise<any>;
 	track(): Promise<any>;
-	fetch(...queries: Query<T>[]): Promise<T[]>;
+	fetch(): Promise<T[]>;
+	fetch<U>(query: Query<T, U>): Promise<U[]>;
 	filter(filter: Filter<T>): Store<T>;
 	filter(test: (item: T) => boolean): Store<T>;
 	getUpdateCallback(): () => void;
@@ -71,20 +72,22 @@ export interface Store<T> {
 	transaction(): Transaction<T>;
 }
 
-export interface StoreOptions<T> {}
-
-export interface BaseStoreOptions<T, U> extends StoreOptions<T> {
-	source?: BaseStore<U, any>;
-	queries?: Query<T>[];
+export interface StoreOptions<T> {
+	source?: Store<T>;
+	sourceQuery?: Query<T, T>;
 }
 
-export abstract class BaseStore<T extends U, U> implements Store<T> {
-	protected source: BaseStore<U, any>;
+export interface BaseStoreOptions<T> extends StoreOptions<T> {
+	source?: BaseStore<T>;
+}
+
+export abstract class BaseStore<T> implements Store<T> {
+	protected source: BaseStore<T>;
 	protected pauser: Subject<any> = new Subject();
 	protected sourceHandle: Subscription;
-	protected queries: Query<T>[];
+	protected sourceQuery: CompoundQuery<any, T>;
 	protected version: number;
-	protected StoreClass: new <T extends U, U>(...args: any[]) => BaseStore<T, U>;
+	protected StoreClass: new (...args: any[]) => BaseStore<T>;
 	protected getBeforePut: boolean;
 	protected map: Map<string, { item: T; index: number }>;
 	protected data: T[];
@@ -111,10 +114,12 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 		});
 	}.bind(this));
 
-	constructor(options?: BaseStoreOptions<T, U>) {
+	constructor(options?: BaseStoreOptions<T>) {
 		options = options || {};
 		this.source = options.source;
-		this.queries = options.queries || [];
+		if (options.sourceQuery) {
+			this.sourceQuery = new CompoundQuery(options.sourceQuery);
+		}
 		this.StoreClass = <any> this.constructor;
 		this.getBeforePut = true;
 		this.version = this.source ? this.source.version : 1;
@@ -125,12 +130,13 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 	abstract generateId(): Promise<string>;
 	abstract createFilter(): Filter<T>;
 
-	protected abstract _fetch(...queries: Query<T>[]): Promise<T[]>;
+	protected abstract _fetch(): Promise<T[]>;
+	protected abstract _fetch<V>(query: Query<T, V>): Promise<V[]>;
 	protected abstract _get(...ids: string[]): Promise<T[]>;
-	protected abstract _put(...itemsOrPatches: (T | Map<string, Patch<T>>)[]): Promise<ItemUpdated<T>[]>;
+	protected abstract _put(...itemsOrPatches: (T | Map<string, Patch<T, T>>)[]): Promise<ItemUpdated<T>[]>;
 	protected abstract _add(items: T[], indices?: number[]): Promise<ItemAdded<T>[]>;
 	protected abstract _delete(ids: string[], indices?: number[]): Promise<ItemDeleted[]>;
-	protected abstract _patch(updates: Map<string, Patch<T>>): Promise<ItemUpdated<T>[]>;
+	protected abstract _patch(updates: Map<string, Patch<T, T>>): Promise<ItemUpdated<T>[]>;
 	protected abstract isUpdate(item: T): Promise<boolean>;
 
 	release(): Promise<any> {
@@ -150,7 +156,7 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 		}
 	}
 
-	track(): Promise<BaseStore<T, U>> {
+	track(): Promise<BaseStore<T>> {
 		if (this.source) {
 			this.sourceHandle = this.source.observe().subscribe(function(update: Update<T>) {
 				this.propagateUpdate(update);
@@ -177,7 +183,7 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 	}
 
 	put(...items: T[]): Promise<T[]> {
-		const self: BaseStore<T, any> = this;
+		const self: BaseStore<T> = this;
 		if (this.source) {
 			return this.source.put(...items);
 		} else {
@@ -200,12 +206,12 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 					.then((items: T[]) => self._add(items))
 			])
 				.then((updateLists: (ItemUpdated<T> | ItemAdded<T>)[][]) => updateLists.reduce((prev, next) => [...prev, ...next]))
-				.then(updates => self.sendStoreUpdates(updates).map(update => update.item));
+				.then(updates => self.sendStoreUpdates(updates).map((update: ItemUpdated<T> | ItemAdded<T>) => update.item));
 		}
 	}
 
-	patch(updates: Map<string, Patch<T>>): Promise<T[]> {
-		const self: BaseStore<T, any> = this;
+	patch(updates: Map<string, Patch<T, T>>): Promise<T[]> {
+		const self: BaseStore<T> = this;
 		if (this.source) {
 			return this.source.patch(updates);
 		} else {
@@ -219,7 +225,7 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 	}
 
 	add(...items: T[]): Promise<T[]> {
-		const self: BaseStore<T, any> = this;
+		const self: BaseStore<T> = this;
 		if (this.source) {
 			return this.source.add(...items);
 		} else {
@@ -232,7 +238,7 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 	}
 
 	delete(...ids: string[]): Promise<string[]> {
-		const self: BaseStore<T, any> = this;
+		const self: BaseStore<T> = this;
 		if (this.source) {
 			return this.source.delete(...ids);
 		} else {
@@ -243,22 +249,32 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 		}
 	}
 
-	fetch(...queries: Query<T>[]): Promise<T[]> {
+	fetch(): Promise<T[]>;
+	fetch<V>(query: Query<T, V>): Promise<V[]>;
+	fetch<V>(query?: Query<T, V>): Promise<V[]> | Promise<T[]> {
+		const self = <BaseStore<T>> this;
 		if (this.source && (typeof this.version === 'undefined' || this.version !== this.source.version)) {
-			return this.source.fetch(...[ ...this.queries, ...queries ]).then(function(fullData: T[]) {
-				this.version = this.source.version;
-				this.data = this.queries.reduce((prev: T[], next: Query<T>) => next.apply(prev), fullData);
-				if (this.isLive) {
-					return this.buildMap(this.data).then(function(map: ItemMap<T>) {
-						this.map = map;
-						return this.data;
+			const transformQuery: Query<T, V> =
+				query ? (this.sourceQuery ? this.sourceQuery.withQuery(query) : query) : null;
+			const handleData = function(data: T[]) {
+				self.data = data;
+				self.version = self.source.version;
+				if (self.isLive) {
+					return self.buildMap(self.data).then(function(map: ItemMap<T>) {
+						self.map = map;
+						return self.data;
 					});
 				} else {
-					return this.data;
+					return Promise.resolve(self.data);
 				}
-			}.bind(this));
+			};
+			if (transformQuery) {
+				return <Promise<V[]>> this.source.fetch(transformQuery);
+			} else {
+				return <Promise<T[]>> this.source.fetch(this.sourceQuery).then(handleData);
+			}
 		} else {
-			return this._fetch(...queries);
+			return this._fetch(query);
 		}
 	}
 
@@ -295,19 +311,21 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 		return this.query(sort);
 	}
 
-	protected query(query: Query<T>) {
+	protected query(query: Query<T, T>) {
 		const options = this.getOptions();
-		options.queries = [...(options.queries || []), query];
+		if (options.sourceQuery) {
+			const compoundQuery: CompoundQuery<T, T> = options.sourceQuery instanceof CompoundQuery ?
+				<CompoundQuery<T, T>> options.sourceQuery : new CompoundQuery(options.sourceQuery);
+			options.sourceQuery = compoundQuery.withQuery(query);
+		} else {
+			options.sourceQuery = query;
+		}
 
 		return this.createSubcollection(options);
 	}
 
-	protected createSubcollection(options: BaseStoreOptions<T, U> | BaseStoreOptions<T, T>): BaseStore<T, U> | BaseStore<T, T> {
-		if (this.source) {
-			return new this.StoreClass<T, U>(<BaseStoreOptions<T, U>> options);
-		} else {
-			return new this.StoreClass<T, T>(<BaseStoreOptions<T, T>> options);
-		}
+	protected createSubcollection(options: BaseStoreOptions<T>): BaseStore<T> {
+		return new this.StoreClass(options);
 	}
 
 	protected propagateUpdate(updateOrUpdates: Update<T>): void {
@@ -347,10 +365,10 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 		}, _map));
 	}
 
-	protected getOptions(): BaseStoreOptions<T, U> | BaseStoreOptions<T, T> {
+	protected getOptions(): BaseStoreOptions<T> {
 		return {
 			source: this.source || this,
-			queries: this.queries
+			sourceQuery: this.sourceQuery
 		};
 	}
 
@@ -375,7 +393,7 @@ export abstract class BaseStore<T extends U, U> implements Store<T> {
 	}
 
 	protected cancelItems(itemDeletedUpdates: ItemDeleted[]): string[] {
-		const self: BaseStore<T, any> = this;
+		const self: BaseStore<T> = this;
 		return itemDeletedUpdates.map(itemDeletedUpdate => {
 			const id = itemDeletedUpdate.id;
 			if (self.itemObservers.has(id)) {
