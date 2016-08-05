@@ -1,6 +1,6 @@
 import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
-import filterFactory, { Filter, FilterType, BooleanOp} from 'src/store/filter';
+import Filter, { filterFactory, FilterType, BooleanOp} from '../../../src/store/Filter';
 import { pathFactory } from '../../../src/patch/JsonPointer';
 
 type SimpleObj = { key: number; id: string };
