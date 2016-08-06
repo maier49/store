@@ -29,6 +29,8 @@
 		"./src/store/RequestStore.ts",
 		"./src/store/Store.ts",
 		"./src/store/Transaction.ts",
+		"./src/storeActions/StoreAction.ts",
+		"./src/storeActions/StoreActionManager.ts",
 		"./src/utils.ts",
 		"./tests/intern-local.ts",
 		"./tests/intern-saucelabs.ts",

@@ -29,7 +29,7 @@ export const enum BooleanOp {
 export type FilterChainMember<T> = (SimpleFilter<T> | BooleanOp);
 
 export interface SimpleFilter<T> extends Query<T, T> {
-	readonly type: FilterType;
+	readonly filterType: FilterType;
 	readonly test?: (item: T) => boolean;
 	readonly filterChain?: FilterChainMember<T>[];
 	readonly path?: ObjectPointer;
@@ -87,7 +87,7 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 
 	const filter: Filter<T> = {
 		test: item => applyFilterChain(item, filters),
-		type: FilterType.Compound,
+		filterType: FilterType.Compound,
 		apply(data: T[]) {
 			return data.filter(this.test);
 		},
@@ -165,51 +165,51 @@ function applyFilterChain<T>(item: T, filterChain: FilterChainMember<T>[]): bool
 function createComparator<T>(operator: FilterType, value: any, path?: ObjectPointer): SimpleFilter<T> {
 	path = typeof path === 'string' ? createPointer(path) : path;
 	let test: (property: any) => boolean;
-	let type: FilterType;
+	let filterType: FilterType;
 	let operatorString: string;
 	switch (operator) {
 		case FilterType.LessThan:
-			type = FilterType.LessThan;
+			filterType = FilterType.LessThan;
 			test = property => property < value;
 			operatorString = 'lt';
 			break;
 		case FilterType.LessThanOrEqualTo:
-			type = FilterType.LessThanOrEqualTo;
+			filterType = FilterType.LessThanOrEqualTo;
 			test = property => property <= value;
 			operatorString = 'lte';
 			break;
 		case FilterType.GreaterThan:
-			type = FilterType.GreaterThan;
+			filterType = FilterType.GreaterThan;
 			test = property => property > value;
 			operatorString = 'gt';
 			break;
 		case FilterType.GreaterThanOrEqualTo:
-			type = FilterType.GreaterThanOrEqualTo;
+			filterType = FilterType.GreaterThanOrEqualTo;
 			test = property => property >= value;
 			operatorString = 'gte';
 			break;
 		case FilterType.EqualTo:
-			type = FilterType.EqualTo;
+			filterType = FilterType.EqualTo;
 			test = property => property === value;
 			operatorString = 'eq';
 			break;
 		case FilterType.NotEqualTo:
-			type = FilterType.NotEqualTo;
+			filterType = FilterType.NotEqualTo;
 			test = property => property !== value;
 			operatorString = 'ne';
 			break;
 		case FilterType.DeepEqualTo:
-			type = FilterType.DeepEqualTo;
+			filterType = FilterType.DeepEqualTo;
 			test = property => isEqual(property, value);
 			operatorString = 'eq';
 			break;
 		case FilterType.NotDeepEqualTo:
-			type = FilterType.NotDeepEqualTo;
+			filterType = FilterType.NotDeepEqualTo;
 			test = property => !isEqual(property, value);
 			operatorString = 'ne';
 			break;
 		case FilterType.Contains:
-			type = FilterType.Contains;
+			filterType = FilterType.Contains;
 			test = propertyOrItem => {
 				if (Array.isArray(propertyOrItem)) {
 					return propertyOrItem.indexOf(value) > -1;
@@ -220,16 +220,16 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			operatorString = 'contains';
 			break;
 		case FilterType.In:
-			type = FilterType.In;
+			filterType = FilterType.In;
 			test = propertyOrItem => Array.isArray(value) && value.indexOf(propertyOrItem) > -1;
 			operatorString = 'in';
 			break;
 		case FilterType.Matches:
-			type = FilterType.Matches;
+			filterType = FilterType.Matches;
 			test = property => value.test(property);
 			break;
 		case FilterType.Custom:
-			type = FilterType.Custom;
+			filterType = FilterType.Custom;
 			test = value;
 			break;
 		default:
@@ -251,7 +251,7 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 		},
 		path: path,
 		value: value,
-		type: type,
+		filterType: filterType,
 		queryType: QueryType.Filter
 	};
 }

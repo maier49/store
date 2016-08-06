@@ -402,7 +402,7 @@ registerSuite({
 	'provide custom serialization approach': function() {
 		function serializeFilter(filter: Filter<any>): string {
 			function recursivelySerialize(filter: Filter<any>): string {
-				switch (filter.type) {
+				switch (filter.filterType) {
 					case FilterType.LessThan:
 						return filter.path.toString() + ' is less than ' + (filter.value || '');
 					case FilterType.GreaterThan:

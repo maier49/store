@@ -70,6 +70,7 @@ export interface Store<T> {
 	range(start: number, count: number): Store<T>;
 	sort(sort: Sort<T> | ((a: T, b: T) => number) | string, descending?: boolean): Store<T>;
 	transaction(): Transaction<T>;
+	version: number;
 }
 
 export interface StoreOptions<T> {
@@ -86,7 +87,6 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected pauser: Subject<any> = new Subject();
 	protected sourceHandle: Subscription;
 	protected sourceQuery: CompoundQuery<any, T>;
-	protected version: number;
 	protected StoreClass: new (...args: any[]) => BaseStore<T>;
 	protected getBeforePut: boolean;
 	protected map: Map<string, { item: T; index: number }>;
@@ -138,6 +138,8 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected abstract _delete(ids: string[], indices?: number[]): Promise<ItemDeleted[]>;
 	protected abstract _patch(updates: Map<string, Patch<T, T>>): Promise<ItemUpdated<T>[]>;
 	protected abstract isUpdate(item: T): Promise<boolean>;
+
+	version: number;
 
 	release(): Promise<any> {
 		if (this.source) {
