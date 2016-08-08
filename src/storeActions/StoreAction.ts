@@ -1,4 +1,5 @@
 import { Store, ItemAdded, ItemUpdated, ItemDeleted } from '../store/Store';
+import { Observable, Observer } from '@reactivex/RxJS';
 import Promise from 'dojo-shim/Promise';
 import Patch from '../patch/Patch';
 
@@ -25,18 +26,20 @@ export type StoreActionData<T> = StoreActionDatum<T>[];
 export type SuccessfulOperation<T> = ItemAdded<T> | ItemUpdated<T> | ItemDeleted;
 
 export interface StoreAction<T> {
-	do(): Promise<StoreActionResult<T>>;
+	do(): void;
+	observable: Observable<StoreActionResult<T>>;
 	type: StoreActionType;
 	targetedVersion: number;
 	targetedItems: StoreActionData<T>;
 }
 
 export interface StoreActionResult<T> {
+	readonly retried: boolean;
 	action: StoreAction<T>;
 	withErrors: boolean;
-	retryAll?(): Promise<StoreActionResult<T>>;
+	retryAll(): void;
 	type: StoreActionType;
-	filter?(shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean): Promise<StoreActionResult<T>>;
+	filter(shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean): void;
 	store: Store<T>;
 	successfulData: SuccessfulOperation<T>[];
 }
@@ -77,47 +80,76 @@ export function createPatchAction<T>(
 	return createAction(fn, StoreActionType.Patch, targetItems, store, existingFailures, currentItems);
 }
 
-function updateResultToActionResult<T>(
-	action: StoreAction<T>,
-	type: StoreActionType,
-	existingFailures: StoreActionData<T>,
-	existingCurrentItems: T[],
-	result: StoreUpdateResult<T>): StoreActionResult<T> {
-	const currentItems = [ ...(existingCurrentItems || []), ...result.currentItems ];
-	const failedData = [ ...(existingFailures || []), ...result.failedData ];
-	return <StoreActionResult<T>> {
-		action: action,
-		type: type,
-		withErrors: Boolean(result.failedData),
-		retryAll() {
-			return result.retry(failedData).then(updateResultToActionResult.bind(null, type));
-		},
-		filter: (shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean) =>
-			result.retry(
-				failedData.filter((failedDatum, index) => shouldRetry(failedDatum, currentItems[index]))
-			).then(updateResultToActionResult.bind(null, type)),
-		store: result.store,
-		successfulData: result.successfulData
-	};
-}
-
 function createAction<T>(
 	fn: StoreUpdateFunction<T>,
 	type: StoreActionType,
 	targetItems: StoreActionData<T>,
 	store: Store<T>,
 	existingFailures?: StoreActionData<T>,
-	currentItems?: T[]): StoreAction<T> {
+	existingCurrentItems?: T[]): StoreAction<T> {
 	let done = false;
-	return {
+
+	let lastResult: StoreActionResult<T>;
+	let observers: Observer<StoreActionResult<T>>[] = [];
+	const observable = new Observable<StoreActionResult<T>>(function(observer: Observer<StoreActionResult<T>>) {
+		if (lastResult) {
+			observer.next(lastResult);
+		}
+		if (lastResult && !lastResult.withErrors) {
+			observer.complete();
+		} else {
+			observers.push(observer);
+		}
+
+		return () => observers.splice(observers.indexOf(observer), 1);
+	});
+
+	function updateResultToActionResult (
+		action: StoreAction<T>,
+		result: StoreUpdateResult<T>): void {
+		const currentItems = [ ...(existingCurrentItems || []), ...result.currentItems ];
+		const failedData = [ ...(existingFailures || []), ...result.failedData ];
+		lastResult = {
+			retried: false,
+			action: action,
+			type: type,
+			withErrors: Boolean(result.failedData),
+			retryAll() {
+				if (!this.retried && (!lastResult || lastResult.withErrors)) {
+					this.retried = true;
+					result.retry(failedData).then(updateResultToActionResult.bind(null, action));
+				}
+			},
+			filter(shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean) {
+				if (!this.retried && (!lastResult || lastResult.withErrors)) {
+					this.retried = true;
+					result.retry(
+						failedData.filter((failedDatum, index) => shouldRetry(failedDatum, currentItems[index]))
+					).then(updateResultToActionResult.bind(null, action));
+				}
+			},
+			store: result.store,
+			successfulData: result.successfulData
+		};
+
+		observers.forEach(function(observer: Observer<StoreActionResult<T>>) {
+			observer.next(lastResult);
+			if (!lastResult.withErrors) {
+				observer.complete();
+			}
+		});
+	}
+
+	return <StoreAction<T>> {
 		do() {
 			if (done) {
 				throw Error('This action has alrady been completed. Cannot perform the same action twice');
 			}
 			done = true;
 			const self = <StoreAction<T>> this;
-			return fn().then(updateResultToActionResult.bind(null, self, type, existingFailures, currentItems));
+			fn().then(updateResultToActionResult.bind(null, self));
 		},
+		observable: observable,
 		type: type,
 		targetedItems: targetItems,
 		targetedVersion: store.version

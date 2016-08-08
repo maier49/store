@@ -73,10 +73,10 @@ export interface Store<T> {
 	get(...ids: string[]): Promise<T[]>;
 	getIds(...items: T[]): string[];
 	generateId(): Promise<string>;
-	add(...items: T[]): Promise<StoreActionResult<T>>;
-	put(...items: T[]): Promise<StoreActionResult<T>>;
-	patch(updates: Map<string, Patch<T, T>> | { id: string; patch: Patch<T, T> }[]): Promise<StoreActionResult<T>>;
-	delete(...ids: string[]): Promise<StoreActionResult<T>>;
+	add(...items: T[]): Observable<StoreActionResult<T>>;
+	put(...items: T[]): Observable<StoreActionResult<T>>;
+	patch(updates: Map<string, Patch<T, T>> | { id: string; patch: Patch<T, T> }[]): Observable<StoreActionResult<T>>;
+	delete(...ids: string[]): Observable<StoreActionResult<T>>;
 	observe(): Observable<Update<T>>;
 	observe(ids: string | string[]): Observable<T | ItemDeleted>;
 	release(actionManager?: StoreActionManager<T>): Promise<any>;
@@ -135,6 +135,8 @@ export abstract class BaseStore<T> implements Store<T> {
 
 			observer.next(update);
 		});
+
+		return () => this.observers.splice(this.observers.indexOf(observer), 1);
 	}.bind(this));
 
 	constructor(options?: BaseStoreOptions<T>) {
@@ -230,7 +232,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		}
 	}
 
-	put(...items: T[]): Promise<StoreActionResult<T>> {
+	put(...items: T[]): Observable<StoreActionResult<T>> {
 		if (this.source) {
 			return this.source.put(...items);
 		} else {
@@ -238,46 +240,46 @@ export abstract class BaseStore<T> implements Store<T> {
 		}
 	}
 
-	protected localPut(items: T[]): Promise<StoreActionResult<T>> {
+	protected localPut(items: T[]): Observable<StoreActionResult<T>> {
 		const self: BaseStore<T> = this;
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		return this.combinePutUpdateFunctions(items).then(function(updateFunction) {
-			return self.actionManager.queue(createPutAction(updateFunction, items, self));
-		});
+		const action = createPutAction(this.combinePutUpdateFunctions(items), items, self);
+		self.actionManager.queue(action);
+		return action.observable;
 	}
 
-	protected combinePutUpdateFunctions(items: T[]): Promise<StoreUpdateFunction<T>> {
+	protected combinePutUpdateFunctions(items: T[]): StoreUpdateFunction<T> {
 		const self: BaseStore<T> = this;
 		const updatesOrAdds = of(...items).map(this.isUpdate.bind(this));
-		return Promise.all([
-			updatesOrAdds
-				.filter(x => Boolean(x))
-				.toArray()
-				.toPromise()
-				.then((areUpdates: { item: T, id: string }[]) => self.createPut(areUpdates.map(isUpdate => isUpdate.item))),
-			updatesOrAdds
-				.filter(x => !Boolean(x))
-				.toArray()
-				.toPromise()
-				.then((areUpdates: { item: T, id: string }[]) => self.createAdd(areUpdates.map(isUpdate => isUpdate.item)))
-		])
-			.then(([putUpdateFunction, addUpdateFunction]: Array<StoreUpdateFunction<T>>) =>
-				function() {
-					return Promise.all([putUpdateFunction(), addUpdateFunction()])
+		return function() {
+			return Promise.all([
+				updatesOrAdds
+					.filter(x => Boolean(x))
+					.toArray()
+					.toPromise()
+					.then((areUpdates: { item: T, id: string }[]) => self.createPut(areUpdates.map(isUpdate => isUpdate.item))),
+				updatesOrAdds
+					.filter(x => !Boolean(x))
+					.toArray()
+					.toPromise()
+					.then((areUpdates: { item: T, id: string }[]) => self.createAdd(areUpdates.map(isUpdate => isUpdate.item)))
+			])
+				.then(([putUpdateFunction, addUpdateFunction]: Array<StoreUpdateFunction<T>>) =>
+					Promise.all([putUpdateFunction(), addUpdateFunction()])
 						.then(([ putResults, addResults ]: StoreUpdateResult<T>[]) => ({
 							currentItems: [...putResults.currentItems, ...addResults.currentItems],
 							failedData: [...putResults.failedData, ...addResults.failedData],
 							successfulData: [...putResults.successfulData, ...addResults.successfulData],
 							store: self,
-							retry: (failedData: T[]) => self.combinePutUpdateFunctions(failedData).then(fn => fn())
-						}));
-				}
-			);
+							retry: (failedData: T[]) => self.combinePutUpdateFunctions(failedData)()
+						}))
+				);
+		};
 	}
 
-	patch(updates: Array<{ id: string; patch: Patch<T, T> }> | Map<string, Patch<T, T>>): Promise<StoreActionResult<T>> {
+	patch(updates: Array<{ id: string; patch: Patch<T, T> }> | Map<string, Patch<T, T>>): Observable<StoreActionResult<T>> {
 		if (this.source) {
 			return this.source.patch(updates);
 		} else {
@@ -299,16 +301,17 @@ export abstract class BaseStore<T> implements Store<T> {
 		}
 	}
 
-	protected localPatch(updates: { id: string; patch: Patch<T, T> }[]): Promise<StoreActionResult<T>> {
+	protected localPatch(updates: { id: string; patch: Patch<T, T> }[]): Observable<StoreActionResult<T>> {
 		const self: BaseStore<T> = this;
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-
-		return this.actionManager.queue(createPatchAction(this.createPatch(updates), updates, self));
+		const action = createPatchAction(this.createPatch(updates), updates, self);
+		this.actionManager.queue(action);
+		return action.observable;
 	}
 
-	add(...items: T[]): Promise<StoreActionResult<T>> {
+	add(...items: T[]): Observable<StoreActionResult<T>> {
 		if (this.source) {
 			return this.source.add(...items);
 		} else {
@@ -316,15 +319,17 @@ export abstract class BaseStore<T> implements Store<T> {
 		}
 	}
 
-	protected localAdd(items: T[]): Promise<StoreActionResult<T>> {
+	protected localAdd(items: T[]): Observable<StoreActionResult<T>> {
 		const self: BaseStore<T> = this;
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		return this.actionManager.queue(createAddAction(this.createAdd(items), items, self));
+		const action = createAddAction(this.createAdd(items), items, self);
+		this.actionManager.queue(action);
+		return action.observable;
 	}
 
-	delete(...ids: string[]): Promise<StoreActionResult<T>> {
+	delete(...ids: string[]): Observable<StoreActionResult<T>> {
 		if (this.source) {
 			return this.source.delete(...ids);
 		} else {
@@ -332,12 +337,14 @@ export abstract class BaseStore<T> implements Store<T> {
 		}
 	}
 
-	protected localDelete(ids: string[]): Promise<StoreActionResult<T>> {
+	protected localDelete(ids: string[]): Observable<StoreActionResult<T>> {
 		const self: BaseStore<T> = this;
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		return this.actionManager.queue(createDeleteAction(this.createDelete(ids), ids, self));
+		const action = createDeleteAction(this.createDelete(ids), ids, self);
+		this.actionManager.queue(action);
+		return action.observable;
 	}
 
 	fetch(): Promise<T[]>;
