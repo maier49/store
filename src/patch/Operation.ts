@@ -12,8 +12,8 @@ export const enum OperationType {
 interface Operation {
 	op: string;
 	path: JsonPointer;
-	toString: () => string;
-	apply: (target: any) => any;
+	toString(): string;
+	apply(target: any): any;
 }
 
 export default Operation;

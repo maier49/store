@@ -240,10 +240,10 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			let propertyValue: any = path ? navigate(<JsonPointer> path, item) : item;
 			return test(propertyValue);
 		},
-		apply: function(data: T[]) {
+		apply(data: T[]) {
 			return data.filter(this.test);
 		},
-		toString: function() {
+		toString() {
 			if (!operatorString) {
 				throw Error('Cannot parse this filter type to an RQL query string');
 			}

@@ -1,4 +1,4 @@
-import { Store } from '../store/Store';
+import { Store, ItemAdded, ItemUpdated, ItemDeleted } from '../store/Store';
 import Promise from 'dojo-shim/Promise';
 import Patch from '../patch/Patch';
 
@@ -6,100 +6,120 @@ export const enum StoreActionType {
 	Add,
 	Put,
 	Patch,
-	Delete
+	Delete,
+	Compound
 }
 
-export interface StoreActionError<T> {
+export interface StoreUpdateResult<T> {
 	currentItems: T[];
-	forceAction(failedData: StoreActionData<T>[]): Promise<Store<T>>;
-	failedData: StoreActionData<T>[];
+	retry(failedData: StoreActionData<T>): Promise<StoreUpdateResult<T>>;
+	failedData: StoreActionData<T>;
+	successfulData: SuccessfulOperation<T>[];
+	store: Store<T>;
 }
 
-export type StoreActionResultData<T> = Store<T> | RejectedAction<T>;
-export type StoreActionResult<T> = { action: StoreAction<T>; result: StoreActionResultData<T>};
-export type StoreActionData<T> = T | string | Patch<T, T>;
+export type StoreUpdateFunction<T> = () => Promise<StoreUpdateResult<T>>
 
-export function isStore<T>(actionResult: StoreActionResultData<T>): actionResult is Store<T> {
-	return !(<any> actionResult).type &&
-		!(<any> actionResult).forceAll &&
-		!(<any> actionResult).filter;
-}
-
-export function isRejectedAction<T>(actionResult: StoreActionResultData<T>): actionResult is RejectedAction<T> {
-	return (<any> actionResult).type &&
-		(<any> actionResult).forceAll &&
-		(<any> actionResult).targets &&
-		(<any> actionResult).targetedVersion;
-}
-
-export interface AddOrPutError<T> extends StoreActionError<T> {
-	failedData: T[];
-}
-
-export interface DeleteError<T> extends StoreActionError<T> {
-	failedData: string[];
-}
-
-export interface PatchError<T> extends StoreActionError<T> {
-	failedData: Patch<T, T>[];
-}
+export type StoreActionDatum<T> = T | string | { id: string, patch: Patch<T, T> };
+export type StoreActionData<T> = StoreActionDatum<T>[];
+export type SuccessfulOperation<T> = ItemAdded<T> | ItemUpdated<T> | ItemDeleted;
 
 export interface StoreAction<T> {
 	do(): Promise<StoreActionResult<T>>;
 	type: StoreActionType;
 	targetedVersion: number;
-	targets: StoreActionData<T>[];
+	targetedItems: StoreActionData<T>;
 }
 
-export interface RejectedAction<T> {
-	forceAll(): Promise<Store<T>>;
+export interface StoreActionResult<T> {
+	action: StoreAction<T>;
+	withErrors: boolean;
+	retryAll?(): Promise<StoreActionResult<T>>;
 	type: StoreActionType;
-	filter(shouldForce: (data: StoreActionData<T>, currentItem: T) => boolean): Promise<Store<T>>;
+	filter?(shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean): Promise<StoreActionResult<T>>;
+	store: Store<T>;
+	successfulData: SuccessfulOperation<T>[];
 }
 
-export function createPutAction<T>(fn: () => Promise<Store<T>>, items: T[], store: Store<T>) {
-	return createAction(fn, items, store, StoreActionType.Put);
+export function createPutAction<T>(
+	fn: StoreUpdateFunction<T>,
+	targetItems: StoreActionData<T>,
+	store: Store<T>,
+	existingFailures?: StoreActionData<T>,
+	currentItems?: T[]) {
+	return createAction(fn, StoreActionType.Put, targetItems, store, existingFailures, currentItems);
 }
 
-export function createAddAction<T>(fn: () => Promise<Store<T>>, items: T[], store: Store<T>) {
-	return createAction(fn, items, store, StoreActionType.Add);
+export function createAddAction<T>(
+	fn: StoreUpdateFunction<T>,
+	targetItems: StoreActionData<T>,
+	store: Store<T>,
+	existingFailures?: StoreActionData<T>,
+	currentItems?: T[]) {
+	return createAction(fn, StoreActionType.Add, targetItems, store, existingFailures, currentItems);
 }
 
-export function createDeleteAction<T>(fn: () => Promise<Store<T>>, ids: string[], store: Store<T>) {
-	return createAction(fn, ids, store, StoreActionType.Delete);
+export function createDeleteAction<T>(
+	fn: StoreUpdateFunction<T>,
+	targetItems: StoreActionData<T>,
+	store: Store<T>,
+	existingFailures?: StoreActionData<T>,
+	currentItems?: T[]) {
+	return createAction(fn, StoreActionType.Delete, targetItems, store, existingFailures, currentItems);
 }
 
-export function createPatchAction<T>(fn: () => Promise<Store<T>>, patches: Patch<T, T>[], store: Store<T>) {
-	return createAction(fn, patches, store, StoreActionType.Patch);
+export function createPatchAction<T>(
+	fn: StoreUpdateFunction<T>,
+	targetItems: StoreActionData<T>,
+	store: Store<T>,
+	existingFailures?: StoreActionData<T>,
+	currentItems?: T[]) {
+	return createAction(fn, StoreActionType.Patch, targetItems, store, existingFailures, currentItems);
 }
 
-function createAction<T>(fn: () => Promise<Store<T>>, data: StoreActionData<T>[], store: Store<T>, type: StoreActionType): StoreAction<T> {
-	return {
-		do: function() {
-			const self = <StoreAction<T>> this;
-			return fn().then((successfulResult: Store<T>) => store).catch<StoreActionResult<T>>(function(failed: any) {
-				let error = <StoreActionError<T>> failed;
-				if (!error.failedData) {
-					// If we don't recognize the error, propagate it out
-					throw error;
-				}
-				return {
-					action: self,
-					result: {
-						type: type,
-						forceAll: function () {
-							return error.forceAction(error.failedData);
-						},
-						filter: (shouldForce: (datum: StoreActionData<T>, currentItem: T) => boolean) =>
-							error.forceAction(error.failedData.filter((datum: StoreActionData<T>, index: number) =>
-								shouldForce(datum, error.currentItems[index]))
-							)
-					}
-				};
-			});
-		},
-		targetedVersion: store.version,
+function updateResultToActionResult<T>(
+	action: StoreAction<T>,
+	type: StoreActionType,
+	existingFailures: StoreActionData<T>,
+	existingCurrentItems: T[],
+	result: StoreUpdateResult<T>): StoreActionResult<T> {
+	const currentItems = [ ...(existingCurrentItems || []), ...result.currentItems ];
+	const failedData = [ ...(existingFailures || []), ...result.failedData ];
+	return <StoreActionResult<T>> {
+		action: action,
 		type: type,
-		targets: data
+		withErrors: Boolean(result.failedData),
+		retryAll() {
+			return result.retry(failedData).then(updateResultToActionResult.bind(null, type));
+		},
+		filter: (shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean) =>
+			result.retry(
+				failedData.filter((failedDatum, index) => shouldRetry(failedDatum, currentItems[index]))
+			).then(updateResultToActionResult.bind(null, type)),
+		store: result.store,
+		successfulData: result.successfulData
+	};
+}
+
+function createAction<T>(
+	fn: StoreUpdateFunction<T>,
+	type: StoreActionType,
+	targetItems: StoreActionData<T>,
+	store: Store<T>,
+	existingFailures?: StoreActionData<T>,
+	currentItems?: T[]): StoreAction<T> {
+	let done = false;
+	return {
+		do() {
+			if (done) {
+				throw Error('This action has alrady been completed. Cannot perform the same action twice');
+			}
+			done = true;
+			const self = <StoreAction<T>> this;
+			return fn().then(updateResultToActionResult.bind(null, self, type, existingFailures, currentItems));
+		},
+		type: type,
+		targetedItems: targetItems,
+		targetedVersion: store.version
 	};
 }
