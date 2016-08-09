@@ -2,8 +2,9 @@ import { Store } from './Store';
 import Patch from '../patch/Patch';
 import Promise from 'dojo-shim/Promise';
 import Map from 'dojo-shim/Map';
-import { Subject } from '@reactivex/RxJS';
+import { Subject } from 'rxjs';
 
+// TODO - Update Transactions to work with store action manager and store actions
 export interface Transaction<T> {
 	abort(): Store<T>;
 	commit(): Promise<Store<T>>;

@@ -1,17 +1,27 @@
-import { StoreAction, StoreActionResult } from './StoreAction';
+import { StoreAction, StoreActionResult, StoreUpdateFunction, StoreUpdateResult } from './StoreAction';
 import { after }  from 'dojo-core/aspect';
+import Promise from 'dojo-shim/Promise';
 
 interface StoreActionManager<T> {
-	readonly waitingActions: StoreAction<T>[];
+	readonly waitingActionsAndUpdates: Array<StoreAction<T> | StoreUpdateFunction<T>>;
 	queue(action: StoreAction<T>): void;
+	queue(updateFunction: StoreUpdateFunction<T>): Promise<StoreUpdateResult<T>>;
 	queue(actions: StoreAction<T>[]): void;
 	actionManager(actionResult: StoreAction<T>, completedCallback: () => void): void;
 }
 
 export default StoreActionManager;
 
+function isAction<T>(updateOrAction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T>): updateOrAction is StoreAction<T> {
+	return typeof (<any> updateOrAction).do === 'function';
+}
+
+function isUpdate<T>(updateOrAction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T>): updateOrAction is StoreUpdateFunction<T> {
+	return typeof updateOrAction === 'function';
+}
+
 export abstract class BaseActionManager<T> implements StoreActionManager<T> {
-	waitingActions: StoreAction<T>[] = [];
+	waitingActionsAndUpdates: Array<StoreAction<T> | StoreUpdateFunction<T>> = [];
 
 	abstract actionManager(actionResult: StoreAction<T>, completedCallback: () => void): void;
 
@@ -20,11 +30,16 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 
 		let processing = false;
 		function processNext() {
-			if (self.waitingActions.length) {
+			if (self.waitingActionsAndUpdates.length) {
 				processing = true;
-				const nextAction = self.waitingActions.shift();
-				self.actionManager(nextAction, processNext);
-				nextAction.do();
+				const nextActionOrUpdate = self.waitingActionsAndUpdates.shift();
+				if (isAction(nextActionOrUpdate)) {
+					self.actionManager(nextActionOrUpdate, processNext);
+					nextActionOrUpdate.do();
+				} else {
+					nextActionOrUpdate();
+					processNext();
+				}
 			} else {
 				processing = false;
 			}
@@ -36,14 +51,25 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 			}
 		});
 	}
-
+	queue(updateFunction: StoreUpdateFunction<T>): Promise<StoreUpdateResult<T>>;
 	queue(action: StoreAction<T>): void;
 	queue(actions: StoreAction<T>[]): void;
-	queue(actionOrActions: StoreAction<T> | StoreAction<T>[]): void {
-		if (actionOrActions instanceof Array) {
-			this.waitingActions.push(...(<StoreAction<T>[]> actionOrActions));
-		} else {
-			this.waitingActions.push(<StoreAction<T>> actionOrActions);
+	queue(actionActionsOrUpdateFunction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T>): void | Promise<StoreUpdateResult<T>> {
+		if (actionActionsOrUpdateFunction instanceof Array) {
+			this.waitingActionsAndUpdates.push(...(<StoreAction<T>[]> actionActionsOrUpdateFunction));
+		} else if (isAction(actionActionsOrUpdateFunction)) {
+			this.waitingActionsAndUpdates.push(actionActionsOrUpdateFunction);
+		} else if (isUpdate(actionActionsOrUpdateFunction)) {
+			const self = <StoreActionManager<T>> this;
+			return new Promise(function(resolve) {
+				self.waitingActionsAndUpdates.push(function(): Promise<StoreUpdateResult<T>> {
+					return (<StoreUpdateFunction<T>> actionActionsOrUpdateFunction)()
+						.then(function(result: StoreUpdateResult<T>) {
+							resolve(result);
+							return result;
+						});
+				});
+			});
 		}
 	}
 }

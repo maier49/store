@@ -1,5 +1,5 @@
-import { Store, ItemAdded, ItemUpdated, ItemDeleted } from '../store/Store';
-import { Observable, Observer } from '@reactivex/RxJS';
+import { Store, BatchUpdate } from '../store/Store';
+import { Observable, Observer } from 'rxjs';
 import Promise from 'dojo-shim/Promise';
 import Patch from '../patch/Patch';
 
@@ -12,10 +12,10 @@ export const enum StoreActionType {
 }
 
 export interface StoreUpdateResult<T> {
-	currentItems: T[];
+	currentItems?: T[];
 	retry(failedData: StoreActionData<T>): Promise<StoreUpdateResult<T>>;
-	failedData: StoreActionData<T>;
-	successfulData: SuccessfulOperation<T>[];
+	failedData?: StoreActionData<T>;
+	successfulData: BatchUpdate<T>;
 	store: Store<T>;
 }
 
@@ -23,7 +23,6 @@ export type StoreUpdateFunction<T> = () => Promise<StoreUpdateResult<T>>
 
 export type StoreActionDatum<T> = T | string | { id: string, patch: Patch<T, T> };
 export type StoreActionData<T> = StoreActionDatum<T>[];
-export type SuccessfulOperation<T> = ItemAdded<T> | ItemUpdated<T> | ItemDeleted;
 
 export interface StoreAction<T> {
 	do(): void;
@@ -41,7 +40,7 @@ export interface StoreActionResult<T> {
 	type: StoreActionType;
 	filter(shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean): void;
 	store: Store<T>;
-	successfulData: SuccessfulOperation<T>[];
+	successfulData: BatchUpdate<T>;
 }
 
 export function createPutAction<T>(
@@ -91,6 +90,7 @@ function createAction<T>(
 
 	let lastResult: StoreActionResult<T>;
 	let observers: Observer<StoreActionResult<T>>[] = [];
+	let remove: number[] = [];
 	const observable = new Observable<StoreActionResult<T>>(function(observer: Observer<StoreActionResult<T>>) {
 		if (lastResult) {
 			observer.next(lastResult);
@@ -101,14 +101,16 @@ function createAction<T>(
 			observers.push(observer);
 		}
 
-		return () => observers.splice(observers.indexOf(observer), 1);
+		return () => remove.push(observers.indexOf(observer));
 	});
 
 	function updateResultToActionResult (
 		action: StoreAction<T>,
 		result: StoreUpdateResult<T>): void {
-		const currentItems = [ ...(existingCurrentItems || []), ...result.currentItems ];
-		const failedData = [ ...(existingFailures || []), ...result.failedData ];
+		const currentItems = (existingCurrentItems || result.currentItems) ?
+			[ ...(existingCurrentItems || []), ...(result.currentItems || []) ] : null;
+		const failedData = (existingFailures || result.failedData) ?
+			[ ...(existingFailures || []), ...(result.failedData || []) ] : null;
 		lastResult = {
 			retried: false,
 			action: action,
@@ -138,6 +140,9 @@ function createAction<T>(
 				observer.complete();
 			}
 		});
+		while (remove.length) {
+			observers.splice(remove.pop(), 1);
+		}
 	}
 
 	return <StoreAction<T>> {

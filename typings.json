@@ -1,13 +1,13 @@
 {
 	"name": "dojo-store-prototype",
 	"dependencies": {
-		"@reactivex/RxJS": "npm:@reactivex/rxjs"
+		"rxjs": "npm:@reactivex/rxjs"
 	},
 	"globalDependencies": {
 		"dojo-compose": "npm:dojo-compose",
 		"dojo-core": "npm:dojo-core",
-		"dojo-shim": "npm:dojo-shim",
 		"dojo-has": "npm:dojo-has",
+		"dojo-shim": "npm:dojo-shim",
 		"dojo-loader": "npm:dojo-loader",
 		"es6-shim": "github:DefinitelyTyped/DefinitelyTyped/es6-shim/es6-shim.d.ts#6697d6f7dadbf5773cb40ecda35a76027e0783b2",
 		"service_worker_api": "registry:dt/service_worker_api#0.0.0+20150323201954",

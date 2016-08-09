@@ -38,7 +38,8 @@
 		"./tests/support/Reporter.ts",
 		"./tests/support/util.ts",
 		"./tests/unit/all.ts",
-		"./tests/unit/store/filter.ts",
-		"./tests/unit/store/sort.ts"
+		"./tests/unit/query/filter.ts",
+		"./tests/unit/query/sort.ts",
+		"./tests/unit/store/memoryStore.ts"
 	]
 }

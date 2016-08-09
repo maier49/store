@@ -1,2 +1,3 @@
-import './store/filter';
-import './store/sort';
+import './query/filter';
+import './query/sort';
+import './store/memoryStore';

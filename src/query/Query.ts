@@ -45,4 +45,10 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 
 		return newQuery;
 	}
+
+	get queryTypes() {
+		const queryTypes = new Set<QueryType>();
+		[ ...this.queries, this.finalQuery ].forEach((query: Query<any, any>) => queryTypes.add(query.queryType));
+		return queryTypes;
+	}
 }
