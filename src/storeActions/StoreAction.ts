@@ -25,7 +25,7 @@ export type StoreActionDatum<T> = T | string | { id: string, patch: Patch<T, T> 
 export type StoreActionData<T> = StoreActionDatum<T>[];
 
 export interface StoreAction<T> {
-	do(): void;
+	do(): Promise<any>;
 	observable: Observable<StoreActionResult<T>>;
 	type: StoreActionType;
 	targetedVersion: number;
@@ -126,7 +126,7 @@ function createAction<T>(
 				if (!this.retried && (!lastResult || lastResult.withErrors)) {
 					this.retried = true;
 					result.retry(
-						failedData.filter((failedDatum, index) => shouldRetry(failedDatum, currentItems[index]))
+						failedData.filter((failedDatum, index) => shouldRetry(failedDatum, currentItems && currentItems[index]))
 					).then(updateResultToActionResult.bind(null, action));
 				}
 			},
@@ -152,7 +152,7 @@ function createAction<T>(
 			}
 			done = true;
 			const self = <StoreAction<T>> this;
-			fn().then(updateResultToActionResult.bind(null, self));
+			return fn().then(updateResultToActionResult.bind(null, self));
 		},
 		observable: observable,
 		type: type,

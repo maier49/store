@@ -28,6 +28,7 @@ export type ItemEntry<T> = {
 export type ItemMap<T> = Map<string, ItemEntry<T>>;
 
 export interface Update<T> {
+	type: UpdateType;
 	id: string;
 }
 export interface ItemAdded<T> extends Update<T> {
@@ -79,10 +80,10 @@ export interface Store<T> {
 	generateId(): Promise<string>;
 	add(...items: T[]): Observable<StoreActionResult<T>>;
 	put(...items: T[]): Observable<StoreActionResult<T>>;
-	patch(updates: Map<string, Patch<T, T>> | { id: string; patch: Patch<T, T> }[]): Observable<StoreActionResult<T>>;
+	patch(updates: Map<string, Patch<T, T>> | { id: string; patch: Patch<T, T> } | { id: string; patch: Patch<T, T> }[]): Observable<StoreActionResult<T>>;
 	delete(...ids: string[]): Observable<StoreActionResult<T>>;
 	observe(): Observable<MultiUpdate<T>>;
-	observe(ids: string | string[]): Observable<T | ItemDeleted>;
+	observe(ids: string | string[]): Observable<Update<T>>;
 	release(actionManager?: StoreActionManager<T>): Promise<any>;
 	track(): Promise<any>;
 	fetch(): Promise<T[]>;
@@ -100,6 +101,7 @@ export interface Store<T> {
 export interface StoreOptions<T> {
 	source?: Store<T>;
 	sourceQuery?: Query<T, T>;
+	failOnDirtyData?: boolean;
 }
 
 export interface BaseStoreOptions<T> extends StoreOptions<T> {
@@ -108,6 +110,7 @@ export interface BaseStoreOptions<T> extends StoreOptions<T> {
 }
 
 export abstract class BaseStore<T> implements Store<T> {
+	protected failOnDirtyData: boolean;
 	protected source: BaseStore<T>;
 	protected pauser: Subject<any> = new Subject();
 	protected sourceSubscription: Subscription;
@@ -120,7 +123,7 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected inTransaction: boolean;
 	protected itemObservers: Map<string, { observes: Set<string>; observer: Observer<Update<T>> }[]> =
 		new Map<string, { observes: Set<string>; observer: Observer<Update<T>> }[]>();
-	protected observers: Observer<MultiUpdate<T>>[];
+	protected observers: Observer<MultiUpdate<T>>[] = [];
 	protected actionManager: StoreActionManager<T>;
 	protected removeObservers: number[] = [];
 	protected observable: Observable<MultiUpdate<T>> = new Observable<MultiUpdate<T>>(function subscribe(observer: Observer<MultiUpdate<T>>) {
@@ -167,7 +170,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		this.version = this.source ? this.source.version : 1;
 		this.inTransaction = false;
 		this.actionManager = options.actionManager || new AsyncPassiveActionManager<T>();
-		this.observers = [];
+		this.failOnDirtyData = options.failOnDirtyData;
 
 		this.setupUpdateAspects();
 	}
@@ -180,10 +183,10 @@ export abstract class BaseStore<T> implements Store<T> {
 		return createFilter<T>();
 	}
 
-	protected abstract _fetch(): Promise<T[]>;
-	protected abstract _fetch<V>(query: Query<T, V>): Promise<V[]>;
+	protected abstract createFetch(): () => Promise<T[]>;
+	protected abstract createFetch<V>(query: Query<T, V>): () => Promise<V[]>;
 
-	protected abstract _get(ids: string[]): Promise<T[]>;
+	protected abstract createGet(ids: string[]): () => Promise<T[]>;
 
 	protected abstract createPut(items: T[]): StoreUpdateFunction<T>;
 
@@ -239,7 +242,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		if (this.source) {
 			return this.source.get(...ids);
 		} else {
-			return this._get(ids);
+			return this.actionManager.queue(this.createGet(ids));
 		}
 	}
 
@@ -256,15 +259,16 @@ export abstract class BaseStore<T> implements Store<T> {
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		const action = this.rejectIfOutdated(createPutAction(this.combinePutUpdateFunctions(items), items, self));
-		self.actionManager.queue(action);
-		return action.observable;
+		const action = createPutAction(this.combinePutUpdateFunctions(items), items, self);
+		const wrappedAction = this.failOnDirtyData ? this.wrapActionWithStaleDataCheck(action) : action;
+		self.actionManager.queue(wrappedAction);
+		return wrappedAction.observable;
 	}
 
 	protected combinePutUpdateFunctions(items: T[]): StoreUpdateFunction<T> {
 		const self: BaseStore<T> = this;
-		const updatesOrAdds = Promise.all(items.map(item => this.isUpdate(item)));
 		return function() {
+			const updatesOrAdds = Promise.all(items.map(item => self.isUpdate(item)));
 			return Promise.all([
 				updatesOrAdds
 					.then((areUpdates: { isUpdate: boolean; item: T; id: string }[]) => self.createPut(areUpdates.filter(x => x.isUpdate).map(isUpdate => isUpdate.item))),
@@ -274,8 +278,10 @@ export abstract class BaseStore<T> implements Store<T> {
 				.then(([putUpdateFunction, addUpdateFunction]: Array<StoreUpdateFunction<T>>) =>
 					Promise.all([putUpdateFunction(), addUpdateFunction()])
 						.then(([ putResults, addResults ]: StoreUpdateResult<T>[]) => ({
-							currentItems: [...putResults.currentItems, ...addResults.currentItems],
-							failedData: [...putResults.failedData, ...addResults.failedData],
+							currentItems: (putResults.currentItems || addResults.currentItems) ?
+							[...(putResults.currentItems || []), ...(addResults.currentItems || [])] : null,
+							failedData: (putResults.failedData || addResults.failedData) ?
+							[...(putResults.failedData || []), ...(addResults.failedData || [])] : null,
 							successfulData: <ItemsUpdated<T>> {
 								type: 'update',
 								updates: [ ...putResults.successfulData.updates, ...addResults.successfulData.updates ]
@@ -287,7 +293,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		};
 	}
 
-	patch(updates: Array<{ id: string; patch: Patch<T, T> }> | Map<string, Patch<T, T>>): Observable<StoreActionResult<T>> {
+	patch(updates: { id: string; patch: Patch<T, T> } | Array<{ id: string; patch: Patch<T, T> }> | Map<string, Patch<T, T>>): Observable<StoreActionResult<T>> {
 		if (this.source) {
 			return this.source.patch(updates);
 		} else {
@@ -302,8 +308,10 @@ export abstract class BaseStore<T> implements Store<T> {
 						patch: updates.get(next.value)
 					});
 				}
-			} else {
+			} else if (Array.isArray(updates)) {
 				updateArray = <Array<{ id: string; patch: Patch<T, T> }>> updates;
+			} else {
+				updateArray = [ <{ id: string, patch: Patch<T, T> }> updates];
 			}
 			return this.localPatch(updateArray);
 		}
@@ -314,9 +322,10 @@ export abstract class BaseStore<T> implements Store<T> {
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		const action = this.rejectIfOutdated(createPatchAction(this.createPatch(updates), updates, self));
-		this.actionManager.queue(action);
-		return action.observable;
+		const action = createPatchAction(this.createPatch(updates), updates, self);
+		const wrappedAction = this.failOnDirtyData ? this.wrapActionWithStaleDataCheck(action) : action;
+		this.actionManager.queue(wrappedAction);
+		return wrappedAction.observable;
 	}
 
 	add(...items: T[]): Observable<StoreActionResult<T>> {
@@ -332,9 +341,10 @@ export abstract class BaseStore<T> implements Store<T> {
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		const action = this.rejectIfOutdated(createAddAction(this.createAdd(items), items, self));
-		this.actionManager.queue(action);
-		return action.observable;
+		const action = createAddAction(this.createAdd(items), items, self);
+		const wrappedAction = this.failOnDirtyData ? this.wrapActionWithStaleDataCheck(action) : action;
+		this.actionManager.queue(wrappedAction);
+		return wrappedAction.observable;
 	}
 
 	delete(...ids: string[]): Observable<StoreActionResult<T>> {
@@ -350,9 +360,10 @@ export abstract class BaseStore<T> implements Store<T> {
 		if (typeof this.version !== 'undefined') {
 			this.version++;
 		}
-		const action = this.rejectIfOutdated(createDeleteAction(this.createDelete(ids), ids, self));
-		this.actionManager.queue(action);
-		return action.observable;
+		const action = createDeleteAction(this.createDelete(ids), ids, self);
+		const wrappedAction = this.failOnDirtyData ? this.wrapActionWithStaleDataCheck(action) : action;
+		this.actionManager.queue(wrappedAction);
+		return wrappedAction.observable;
 	}
 
 	fetch(): Promise<T[]>;
@@ -380,7 +391,7 @@ export abstract class BaseStore<T> implements Store<T> {
 				return <Promise<T[]>> this.source.fetch(this.sourceQuery).then(handleData);
 			}
 		} else {
-			return this._fetch(query);
+			return this.actionManager.queue(this.createFetch(query));
 		}
 	}
 
@@ -477,33 +488,38 @@ export abstract class BaseStore<T> implements Store<T> {
 	}
 
 	public observe(): Observable<MultiUpdate<T>>;
-	public observe(idOrIds: string | string[]): Observable<T | ItemDeleted>;
-	public observe(idOrIds?: string | string[]): any {
+	public observe(idOrIds: string | string[]): Observable<Update<T>>;
+	public observe(idOrIds?: string | string[]): Observable<MultiUpdate<T>> | Observable<Update<T>> {
 		if (idOrIds) {
 			const ids: string[] = Array.isArray(idOrIds) ? <string[]> idOrIds : [<string> idOrIds];
-			return new Observable<T | ItemDeleted>(function subscribe(observer: Observer<T | ItemDeleted>) {
-				const idSet = new Set<string>(Array.from(ids));
-				this.get(...ids).then((items: T[]) => {
-					const retrievedIdSet = new Set<string>(Array.from<string>(this.getIds(items)));
+			const self = <BaseStore<T>> this;
+			return new Observable<Update<T>>(function subscribe(observer: Observer<Update<T>>) {
+				const idSet = new Set<string>(ids);
+				self.get(...ids).then((items: T[]) => {
+					const retrievedIdSet = new Set<string>(self.getIds(...items));
 					let missingItemIds: string[];
 					if (retrievedIdSet.size !== idSet.size || (missingItemIds = ids.filter(id => !retrievedIdSet.has(id))).length) {
 						observer.error(new Error(`ID(s) "${missingItemIds}" not found in store`));
 					} else {
-						const observerEntry: { observes: Set<string>; observer: Observer<T | ItemDeleted>} = {
+						const observerEntry: { observes: Set<string>; observer: Observer<Update<T>>} = {
 							observes: idSet,
 							observer: observer
 						};
 						(<string[]> ids).forEach(id => {
-							if (this.itemObservers.has(id)) {
-								this.itemObservers.get(id).push(observerEntry);
+							if (self.itemObservers.has(id)) {
+								self.itemObservers.get(id).push(observerEntry);
 							} else {
-								this.itemObservers.set(id, [observerEntry]);
+								self.itemObservers.set(id, [observerEntry]);
 							}
-						}, this);
-						items.forEach(item => observer.next(item));
+						});
+						items.forEach((item, index) => observer.next(<ItemAdded<T>> {
+							type: 'add',
+							item: item,
+							id: ids[index]
+						}));
 					}
 				});
-			}.bind(this));
+			});
 		} else {
 			return this.observable;
 		}
@@ -565,69 +581,46 @@ export abstract class BaseStore<T> implements Store<T> {
 		return resultObservable;
 	}
 
-	protected rejectIfOutdated(action: StoreAction<T>) {
+	protected wrapActionWithStaleDataCheck(action: StoreAction<T>) {
 		const self = <BaseStore<T>> this;
-		const ids: string[] = action.targetedItems.map(function(item: StoreActionDatum<T>) {
-			if (typeof item === 'string') {
-				return <string> item;
-			} else if ((<any> item).id && (<any> item).patch && typeof (<any> item).id === 'string') {
-				return <string> (<any> item).id;
-			} else {
-				return self.getIds(<T> item)[0];
+		action.do = function() {
+			const ids: string[] = action.targetedItems.map(function(item: StoreActionDatum<T>) {
+				if (typeof item === 'string') {
+					return <string> item;
+				} else if ((<any> item).id && (<any> item).patch && typeof (<any> item).id === 'string') {
+					return <string> (<any> item).id;
+				} else {
+					return self.getIds(<T> item)[0];
+				}
+			});
+			let currentItems: T[] = [];
+			let newTargets: StoreActionData<T> = (<Array<string | T>> action.targetedItems).filter((item, index) =>
+				(!self.map.has(ids[index])) || (self.map.get(ids[index]).updatedVersion <= action.targetedVersion)
+			);
+			let outdatedData: StoreActionData<T> = (<Array<string | T>> action.targetedItems).filter((item, index) => {
+				const result = self.map.has(ids[index]) && self.map.get(ids[index]).updatedVersion > action.targetedVersion;
+				if (result) {
+					currentItems.push(self.map.get(ids[index]).item);
+				}
+				return result;
+			});
+			let updateFunction: StoreUpdateFunction<T>;
+			switch (action.type) {
+				case StoreActionType.Delete:
+					updateFunction = self.createDelete(<string[]> newTargets);
+					break;
+				case StoreActionType.Add:
+					updateFunction = self.createAdd(<T[]> newTargets);
+					break;
+				case StoreActionType.Put:
+					updateFunction = self.combinePutUpdateFunctions(<T[]> newTargets);
+					break;
+				case StoreActionType.Patch:
+					updateFunction = self.createPatch(<{id: string, patch: Patch<T, T> }[]> newTargets);
+					break;
 			}
-		});
-		let currentItems: T[] = [];
-		let newTargets: StoreActionData<T> = (<Array<string | T>> action.targetedItems).filter((item, index) =>
-			(!self.map.has(ids[index])) || (self.map.get(ids[index]).updatedVersion <= action.targetedVersion)
-		);
-		let outdatedData: StoreActionData<T> = (<Array<string | T>> action.targetedItems).filter((item, index) => {
-			const result = self.map.has(ids[index]) && self.map.get(ids[index]).updatedVersion > action.targetedVersion;
-			if (result) {
-				currentItems.push(self.map.get(ids[index]).item);
-			}
-			return result;
-		});
-		let newAction: StoreAction<T>;
-		switch (action.type) {
-			case StoreActionType.Delete:
-				newAction = createDeleteAction(
-					self.createDelete(<string[]> newTargets),
-					newTargets,
-					self,
-					outdatedData,
-					currentItems
-				);
-				break;
-			case StoreActionType.Add:
-				newAction = createAddAction(
-					self.createAdd(<T[]> newTargets),
-					newTargets,
-					self,
-					outdatedData,
-					currentItems
-				);
-				break;
-			case StoreActionType.Put:
-				newAction = createPutAction(
-					self.createPut(<T[]> newTargets),
-					newTargets,
-					self,
-					outdatedData,
-					currentItems
-				);
-				break;
-			case StoreActionType.Patch:
-				newAction = createPatchAction(
-					self.createPatch(<{id: string, patch: Patch<T, T> }[]> newTargets),
-					newTargets,
-					self,
-					outdatedData,
-					currentItems
-				);
-				break;
 		}
-
-		return newAction;
+		return action;
 	}
 
 	protected wrapUpdateFunctionWithStaleCheck(

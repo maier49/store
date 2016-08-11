@@ -1,8 +1,8 @@
 import Query, { QueryType } from '../query/Query';
-import {BaseStore, BaseStoreOptions, ItemUpdated, ItemsUpdated, ItemsAdded, ItemsDeleted} from './Store';
+import { BaseStore, BaseStoreOptions, ItemUpdated, ItemsUpdated, ItemsAdded, ItemsDeleted, ItemDeleted } from './Store';
 import Promise from 'dojo-shim/Promise';
-import {StoreUpdateFunction, StoreUpdateResult, StoreActionData} from '../storeActions/StoreAction';
-import {diff, default as Patch} from '../patch/Patch';
+import { StoreUpdateFunction, StoreUpdateResult } from '../storeActions/StoreAction';
+import { diff, default as Patch } from '../patch/Patch';
 
 export interface MemoryStoreOptions<T> extends BaseStoreOptions<T> {
 	data?: T[];
@@ -14,12 +14,14 @@ export default class MemoryStore<T> extends BaseStore<T> {
 	idProperty?: string;
 	idFunction?: (item: T) => string;
 	nextId = 1;
-	data: T[];
+	data: T[] = [];
 
 	constructor(options?: MemoryStoreOptions<T>) {
 		super(options);
 		options = options || {};
-		this.data = options.data || [];
+		if (options.data && options.data.length) {
+			this.add(...options.data);
+		}
 		this.idProperty = options.idProperty;
 		this.idFunction = options.idFunction;
 	}
@@ -38,12 +40,14 @@ export default class MemoryStore<T> extends BaseStore<T> {
 		return Promise.resolve(String(this.nextId++));
 	}
 
-	protected _fetch<V>(query?: Query<T, V>): Promise<T[]> {
-		return Promise.resolve(query ? query.apply(this.data) : this.data);
+	protected createFetch<V>(query?: Query<T, V>): () => Promise<V[]> {
+		const self = <MemoryStore<T>> this;
+		return () => Promise.resolve(query ? query.apply(self.data) : self.data);
 	}
 
-	protected _get(ids: string[]): Promise<T[]> {
-		return Promise.resolve(ids.map(id => this.map.get(id).item).filter(item => item));
+	protected createGet(ids: string[]): () => Promise<T[]> {
+		const self = <MemoryStore<T>> this;
+		return () => Promise.resolve(ids.map(id => self.map.has(id) ? self.map.get(id).item : null).filter(item => item));
 	}
 
 	protected createPut(items: T[]): StoreUpdateFunction<T> {
@@ -81,6 +85,7 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				const update: ItemsUpdated<T> = {
 					type: 'update',
 					updates: newIndices.map((newIndex, index) => (<ItemUpdated<T>> {
+						type: 'update',
 						index: newIndex,
 						previousIndex: oldIndices[index],
 						item: filteredItems[index],
@@ -91,12 +96,12 @@ export default class MemoryStore<T> extends BaseStore<T> {
 
 				return <StoreUpdateResult<T>> {
 					successfulData: update,
-					retry: (failedData: StoreActionData<T>) => self.actionManager.queue(
-						self.wrapUpdateFunctionWithStaleCheck(
+					retry: (items: T[]) => self.actionManager.queue(
+						self.failOnDirtyData ? self.wrapUpdateFunctionWithStaleCheck(
 							self.createPut.bind(self),
 							items,
 							self.version
-						)
+						) : () => self.createPut(items)()
 					),
 					failedData: failedItems.length ? failedItems : null,
 					currentItems: failedItems.length ? currentItems : null,
@@ -148,11 +153,11 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				return <StoreUpdateResult<T>> {
 					successfulData: update,
 					retry: (items: T[]) => self.actionManager.queue(
-						self.wrapUpdateFunctionWithStaleCheck(
+						self.failOnDirtyData ? self.wrapUpdateFunctionWithStaleCheck(
 							self.createAdd.bind(self),
 							items,
 							self.version
-						)
+						) : () => self.createAdd(items)()
 					),
 					failedData: failedItems.length ? failedItems : null,
 					currentItems: failedItems.length ? currentItems : null,
@@ -165,11 +170,10 @@ export default class MemoryStore<T> extends BaseStore<T> {
 	protected createDelete(ids: string[]): StoreUpdateFunction<T> {
 		const self = <MemoryStore<T>> this;
 		return () => {
-			const localIds = self.getIds(...self.data);
-			let earliestDelete = Infinity;
-
 			let successfulUpdates: { index: number, id: string }[] = [];
 			let failedData: string[] = [];
+			let filteredIds: string[] = [];
+			const indices: number[] = [];
 			ids.forEach(id => {
 				if (self.map.has(id)) {
 					const index = self.map.get(id).index;
@@ -177,37 +181,47 @@ export default class MemoryStore<T> extends BaseStore<T> {
 						index: index,
 						id: id
 					});
-					earliestDelete = Math.min(earliestDelete, index);
-					self.map.delete(id);
-					localIds.splice(index, 1);
-					self.data.splice(index, 1);
+					indices.push(index);
+					filteredIds.push(id);
 				} else {
 					failedData.push(id);
 				}
 			});
-
-			for (let i = earliestDelete; i < self.data.length; i++) {
-				self.map.get(localIds[i]).index = i;
+			let dataPromise: Promise<void>;
+			if (self.source && self.sourceQuery && self.sourceQuery.queryTypes.has(QueryType.Range)) {
+				dataPromise = self.source.fetch(self.sourceQuery).then(function(data: T[]) {
+					self.data = data;
+				});
+			} else {
+				dataPromise = Promise.resolve();
+				indices.sort().forEach((index, indexArrayIndex) => {
+					self.data.splice(index + indexArrayIndex, 1);
+				});
 			}
 
-			const update: ItemsDeleted<T> = {
-				type: 'delete',
-				updates: successfulUpdates.map(({ index, id }: { index: number; id: string; }) => ({
-					id: id,
-					index: index
-				}))
-			};
-			return Promise.resolve({
-				successfulData: update,
-				failedData: failedData,
-				retry: (ids: string[]) => self.actionManager.queue(
-					self.wrapUpdateFunctionWithStaleCheck(
-						self.createDelete.bind(self),
-						ids,
-						self.version
-					)
-				),
-				store: self
+			return dataPromise.then(() => self.buildMap(self.data)).then(function(map) {
+				self.map = map;
+
+				const update: ItemsDeleted<T> = {
+					type: 'delete',
+					updates: successfulUpdates.map(({ index, id }: { index: number; id: string; }) => (<ItemDeleted> {
+						type: 'delete',
+						id: id,
+						index: index
+					}))
+				};
+				return {
+					successfulData: update,
+					failedData: failedData,
+					retry: (ids: string[]) => self.actionManager.queue(
+						self.failOnDirtyData ?  self.wrapUpdateFunctionWithStaleCheck(
+							self.createDelete.bind(self),
+							ids,
+							self.version
+						) : () => self.createDelete(ids)()
+					),
+					store: self
+				};
 			});
 		};
 	}
@@ -244,6 +258,7 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				const update: ItemsUpdated<T> = {
 					type: 'update',
 					updates: newIndices.map((newIndex, index) => (<ItemUpdated<T>> {
+						type: 'update',
 						index: newIndex,
 						previousIndex: oldIndices[index],
 						item: self.data[newIndex],
@@ -255,11 +270,11 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				return {
 					successfulData: update,
 					retry: (updates: { id: string; patch: Patch<T, T> }[]) => self.actionManager.queue(
-						self.wrapUpdateFunctionWithStaleCheck(
+						self.failOnDirtyData ? self.wrapUpdateFunctionWithStaleCheck(
 							self.createPatch.bind(self),
 							updates,
 							self.version
-						)
+						) : () => self.createPatch(updates)()
 					),
 					failedData: failedItems.length ? failedItems : null,
 					currentItems: failedItems.length ? currentItems : null,
