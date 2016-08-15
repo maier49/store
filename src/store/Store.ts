@@ -71,7 +71,7 @@ function isFilter<T>(filterOrTest: Query<any, any> | ((item: T) => boolean)): fi
 
 function isSort<T>(sortOrComparator: Sort<T> | ((a: T, b: T) => number) | string): sortOrComparator is Sort<T> {
 	const paramType = typeof sortOrComparator;
-	return paramType !== 'function' && paramType !== 'string' && typeof sortOrComparator.apply === 'function';
+	return paramType !== 'function' && paramType !== 'string' && typeof (<Sort<T>> sortOrComparator).apply === 'function';
 }
 
 export interface Store<T> {
