@@ -1,5 +1,6 @@
 import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
+import * as sinon from 'sinon';
 import MemoryStore from '../../../src/store/MemoryStore';
 import { Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded } from '../../../src/store/Store';
 import { StoreActionResult } from '../../../src/storeActions/StoreAction';
@@ -117,6 +118,19 @@ registerSuite({
 			store.add(...data);
 		},
 
+		'should receive an update when initial items are stored'() {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>({
+				data: data
+			});
+			store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				assert.strictEqual(update.type, 'add', 'Should have received a notification about updates');
+				assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data,
+					'Should have received an update for all three items added');
+				dfd.resolve();
+			});
+		},
+
 		'should be able to observe a single item'() {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore({
@@ -224,11 +238,36 @@ registerSuite({
 			store.put(...updates[0]);
 			store.delete(data[0].id, data[1].id);
 			store.delete(data[2].id);
+		},
+
+		'should complete item observations when all relevant items are deleted'() {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			let observationCount = 0;
+			store.observe([data[0].id, data[1].id, data[2].id]).subscribe(
+				function next() {
+					observationCount++;
+				},
+				function error() {},
+				function completed() {
+					assert.equal(observationCount, 10,
+						'Should have received updates for adding items, all updates, and all deletions before completion');
+					dfd.resolve();
+				}
+			);
+
+			store.put(...updates[0]);
+			store.delete(data[0].id, data[1].id);
+			store.put(updates[0][2]);
+			store.delete(data[2].id);
 		}
 	},
 
-	'action order and conflicts': {
-		'result of calls should match order in which they are called'() {
+	'updates, ordering, and conflicts': {
+		'should execute calls in order in which they are called'() {
 			const store: Store<ItemType> = new MemoryStore<ItemType>({});
 			const dfd = this.async(1000);
 			let retrievalCount = 0;
@@ -264,22 +303,189 @@ registerSuite({
 			});
 		},
 
-		'should optionally reject changes to out of dirty data'() {
+		'should optionally reject changes to dirty data'() {
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
 			});
 			const dfd = this.async(1000);
-			store.put(updates[0][0]);
-			store.put(updates[1][0]).subscribe(function(result: StoreActionResult<ItemType>) {
-				assert.isTrue(result.withErrors);
-				result.filter((item: ItemType, currentItem?: ItemType) => {
-					assert.deepEqual(item, updates[1][0], 'Failed update should be passed in filter');
-					assert.deepEqual(item, updates[0][0], 'Should provide existing data for filter');
-					dfd.resolve();
-					return true;
+			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				store.put(updates[0][0]);
+				store.put(updates[1][0]).subscribe(function(result: StoreActionResult<ItemType>) {
+					assert.isTrue(result.withErrors);
+					result.filter((item: ItemType, currentItem?: ItemType) => {
+						assert.deepEqual(item, updates[1][0], 'Failed update should be passed in filter');
+						assert.deepEqual(currentItem, updates[0][0], 'Should provide existing data for filter');
+						dfd.resolve();
+						return true;
+					});
 				});
+				subscription.unsubscribe();
 			});
+		}
+	},
+
+	're-attempting updates': {
+		'should be able to reattempt all failed updates'() {
+			const store: Store<ItemType> = new MemoryStore({
+				data: data,
+				failOnDirtyData: true
+			});
+			let firstTry = true;
+			const dfd = this.async(1000);
+			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				store.put(...updates[0]);
+				store.put(...updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
+					if (firstTry) {
+						assert.isTrue(result.withErrors);
+						result.retryAll();
+						firstTry = false;
+					} else {
+						assert.isFalse(result.withErrors);
+						assert.equal(result.successfulData.updates.length, 3, 'Should have updated all three items');
+						result.successfulData.updates.forEach(function(update: ItemUpdated<ItemType>, index: number) {
+							assert.deepEqual(update.item, updates[1][index], 'Result should include updated data');
+						});
+						dfd.resolve();
+					}
+				});
+				subscription.unsubscribe();
+			});
+		},
+
+		'should be able to selectively reattempt updates'() {
+			const store: Store<ItemType> = new MemoryStore({
+				data: data,
+				failOnDirtyData: true
+			});
+			let firstTry = true;
+			const dfd = this.async(1000);
+			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				store.put(...updates[0]);
+				store.put(...updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
+					if (firstTry) {
+						assert.isTrue(result.withErrors);
+						let count = 0;
+						result.filter((item: ItemType, currentItem?: ItemType) => {
+							assert.deepEqual(item, updates[1][count], 'Failed update should be passed in filter');
+							assert.deepEqual(currentItem, updates[0][count], 'Should provide existing data for filter');
+							count++;
+							return count % 2 === 0;
+						});
+						firstTry = false;
+					} else {
+						assert.isFalse(result.withErrors);
+						assert.strictEqual(result.successfulData.updates.length, 1, 'Should only have updated one item');
+						assert.deepEqual((<ItemUpdated<ItemType>> result.successfulData.updates[0]).item, updates[1][1],
+							'Results should reflect updated data');
+						dfd.resolve();
+					}
+				});
+				subscription.unsubscribe();
+			});
+		},
+
+		'should complete operation observation when the operation is successfully completed'() {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>({
+				failOnDirtyData: true
+			});
+
+			let successCount = 0;
+			let errorCount = 0;
+			let completedCount = 0;
+			store.put(updates[0][0]).subscribe(
+				function next(result) {
+					assert.isFalse(result.withErrors);
+					successCount++;
+				},
+				function error() {},
+				function completed() {
+					completedCount++;
+				}
+			);
+
+			store.put(...updates[1]).subscribe(
+				function next(result) {
+					if (result.withErrors) {
+						result.retryAll();
+						errorCount++;
+					} else {
+						successCount++;
+					}
+				},
+				function error() {},
+				function completed() {
+					assert.equal(errorCount, 1, 'Multi put should have failed for one dirty item');
+					assert.equal(successCount, 2, 'Both updates should have eventually succeesded');
+					assert.equal(completedCount, 1, 'Both updates should have completed');
+					dfd.resolve();
+				}
+			);
+		}
+	},
+
+	'transactions': {
+		'should allow chaining of operations'() {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+
+			store.transaction()
+				.add(...data)
+				.put(...updates[0])
+				.delete(data[0].id)
+				.commit()
+				.subscribe(
+					function next() {
+					},
+					function error() {
+					},
+					function completed() {
+						store.fetch().then(function(data) {
+							assert.deepEqual(data, updates[0].slice(1));
+							dfd.resolve();
+						});
+					}
+				);
+		}
+	},
+
+	'subcollections': {
+		'should retrieve source collection\'s data with queries'() {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+			store
+				.filter(store.createFilter().lessThan('value', 3))
+				.sort('value', true)
+				.fetch().then(function(fetchedData) {
+					assert.deepEqual(fetchedData, [data[1], data[0]]);
+					dfd.resolve();
+				});
+		},
+
+		'should delegate to source collection'() {
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+			const subCollection = store.filter(store.createFilter().lessThan('value', 3));
+			const spies = [
+				sinon.spy(store, 'put'),
+				sinon.spy(store, 'add'),
+				sinon.spy(store, 'delete'),
+				sinon.spy(store, 'patch')
+			];
+			subCollection.put(data[0]);
+			subCollection.add(data[0]);
+			subCollection.delete(data[0].id);
+			subCollection.patch(patches[0]);
+
+			spies.forEach(spy => assert.isTrue(spy.calledOnce));
+		},
+
+		'TODO - should be notified of changes in parent collection'() {
+			// const dfd = this.async(1000);
+			// const store: Store<ItemType> = new MemoryStore<ItemType>();
+			// const subCollection = store.filter(store.createFilter().lessThan('value', 3));
 		}
 	}
 });

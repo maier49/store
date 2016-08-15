@@ -58,6 +58,7 @@ export const loaderOptions = {
 		{ name: 'dojo-has', location: 'node_modules/dojo-has/dist/umd' },
 		{ name: 'dojo-core', location: 'node_modules/dojo-core/dist/umd' },
 		{ name: 'dojo-compose', location: 'node_modules/dojo-compose/dist/umd' },
+		{ name: 'sinon', location: 'node_modules/sinon/pkg', main: 'sinon' },
 		{ name: 'rxjs', location: 'node_modules/@reactivex/rxjs/dist/global', main: 'Rx.umd.js' }
 	]
 };

@@ -23,7 +23,7 @@ function buildOperations(obj: any, key?: JsonPointer): Array<(to: any, from: any
 	}
 }
 
-export function selectFactory<T extends U, U>(properties: U, serializer?: (select: Select<T, U>) => string): Select<T, U> {
+export function createSelect<T extends U, U>(properties: U, serializer?: (select: Select<T, U>) => string): Select<T, U> {
 	const performSelection: Array<(to: any, from: any) => any> = buildOperations(properties);
 	return {
 		properties: properties,

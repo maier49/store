@@ -1,24 +1,24 @@
-import { StoreAction, StoreActionResult, StoreUpdateFunction, StoreUpdateResult } from './StoreAction';
+import { StoreAction, StoreActionResult, StoreUpdateFunction, StoreUpdateResult, StoreActionDatum } from './StoreAction';
 import { after }  from 'dojo-core/aspect';
 import Promise from 'dojo-shim/Promise';
 
 interface StoreActionManager<T> {
-	readonly waitingOperations: Array<StoreAction<T> | StoreUpdateFunction<T> | (() => Promise<any>)>;
+	readonly waitingOperations: Array<StoreAction<T> | StoreUpdateFunction<T, StoreActionDatum<T>> | (() => Promise<any>)>;
 	queue(action: StoreAction<T>): void;
 	queue(actions: StoreAction<T>[]): void;
-	queue(updateFunction: StoreUpdateFunction<T>): Promise<StoreUpdateResult<T>>;
-	queue(nonUpdate: () => Promise<any>): Promise<any>;
+	queue<T, U extends StoreActionDatum<T>>(updateFunction: StoreUpdateFunction<T, U>): Promise<StoreUpdateResult<T, U>>;
+	queue<T>(nonUpdate: () => Promise<T>): Promise<T>;
 	actionManager(actionResult: StoreAction<T>, completedCallback: () => void): void;
 }
 
 export default StoreActionManager;
 
-function isAction<T>(updateOrAction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T>): updateOrAction is StoreAction<T> {
+function isAction<T>(updateOrAction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T, StoreActionDatum<T>> | (() => Promise<any>)): updateOrAction is StoreAction<T> {
 	return typeof (<any> updateOrAction).do === 'function';
 }
 
 export abstract class BaseActionManager<T> implements StoreActionManager<T> {
-	waitingOperations: Array<StoreAction<T> | StoreUpdateFunction<T>> = [];
+	waitingOperations: Array<StoreAction<T> | StoreUpdateFunction<T, StoreActionDatum<T>>> = [];
 
 	abstract actionManager(actionResult: StoreAction<T>, completedCallback: () => void): void;
 
@@ -30,7 +30,7 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 			if (self.waitingOperations.length) {
 				processing = true;
 				const nextActionOrUpdate = self.waitingOperations.shift();
-				if (isAction(nextActionOrUpdate)) {
+				if (isAction<T>(nextActionOrUpdate)) {
 					self.actionManager(nextActionOrUpdate, processNext);
 					nextActionOrUpdate.do();
 				} else {
@@ -50,18 +50,18 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 	}
 	queue(action: StoreAction<T>): void;
 	queue(actions: StoreAction<T>[]): void;
-	queue(updateFunction: StoreUpdateFunction<T>): Promise<StoreUpdateResult<T>>;
-	queue(nonUpdateFunction: () => Promise<any>): Promise<any>;
-	queue(actionActionsOrUpdateFunction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T> | (() => Promise<any>)): void | Promise<StoreUpdateResult<T>> | Promise<any> {
+	queue<U extends StoreActionDatum<T>>(updateFunction: StoreUpdateFunction<T, U>): Promise<StoreUpdateResult<T, U>>;
+	queue<U>(nonUpdateFunction: () => Promise<U>): Promise<U>;
+	queue<U extends StoreActionDatum<T>>(actionActionsOrUpdateFunction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T, U> | (() => Promise<U>)): void | Promise<StoreUpdateResult<T, U>> | Promise<U> {
 		if (actionActionsOrUpdateFunction instanceof Array) {
 			this.waitingOperations.push(...(<StoreAction<T>[]> actionActionsOrUpdateFunction));
-		} else if (isAction(actionActionsOrUpdateFunction)) {
+		} else if (isAction<T>(actionActionsOrUpdateFunction)) {
 			this.waitingOperations.push(actionActionsOrUpdateFunction);
 		} else {
 			const self = <StoreActionManager<T>> this;
 			return new Promise(function(resolve) {
 				self.waitingOperations.push(function() {
-					return (<StoreUpdateFunction<T>> actionActionsOrUpdateFunction)()
+					return (<() => Promise<any>> actionActionsOrUpdateFunction)()
 						.then(function(result: any) {
 							resolve(result);
 							return result;

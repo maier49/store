@@ -1,13 +1,13 @@
 import { Store } from './Store';
 import Patch from '../patch/Patch';
-import Promise from 'dojo-shim/Promise';
 import Map from 'dojo-shim/Map';
-import { Subject } from 'rxjs';
+import { Observable } from 'rxjs';
+import { StoreActionResult } from '../storeActions/StoreAction';
 
 // TODO - Update Transactions to work with store action manager and store actions
 export interface Transaction<T> {
 	abort(): Store<T>;
-	commit(): Promise<Store<T>>;
+	commit(): Observable<StoreActionResult<T>>;
 	add(...items: T[]): Transaction<T>;
 	put(...items: T[]): Transaction<T>;
 	patch(updates: Map<string, Patch<T, T>>): Transaction<T>;
@@ -16,12 +16,10 @@ export interface Transaction<T> {
 
 export class SimpleTransaction<T> implements Transaction<T> {
 	protected store: Store<T>;
-	protected pause: Subject<any>;
-	protected actions: (() => void)[];
-	constructor(store: Store<T>, pause: Subject<any>) {
+	protected actions: Array<() => Observable<StoreActionResult<T>>>;
+	constructor(store: Store<T>) {
 		this.actions = [];
 		this.store = store;
-		this.pause = pause;
 	}
 
 	put(...items: T[]) {
@@ -45,11 +43,7 @@ export class SimpleTransaction<T> implements Transaction<T> {
 	}
 
 	commit() {
-		this.pause.next(false);
-		return Promise.all(this.actions.map(action => action())).then(function() {
-			this.pause.next(true);
-			return this.store;
-		}.bind(this));
+		return Observable.merge(...this.actions.map(action => action()));
 	}
 
 	abort() {

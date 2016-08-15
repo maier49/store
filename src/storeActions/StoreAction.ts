@@ -11,25 +11,36 @@ export const enum StoreActionType {
 	Compound
 }
 
-export interface StoreUpdateResult<T> {
+export interface StoreUpdateResultData<T, U extends StoreActionDatum<T>> {
 	currentItems?: T[];
-	retry(failedData: StoreActionData<T>): Promise<StoreUpdateResult<T>>;
-	failedData?: StoreActionData<T>;
+	failedData?: StoreActionData<T, U>;
 	successfulData: BatchUpdate<T>;
+}
+
+export type FilteredData<T, U extends StoreActionDatum<T>> = {
+	currentItems?: T[];
+	failedData?: StoreActionData<T, U>;
+	data: StoreActionData<T, U>
+}
+
+export type StoreUpdateDataFunction<T, U extends StoreActionDatum<T>> = (data: StoreActionData<T, U>) => Promise<StoreUpdateResultData<T, U>>;
+
+export interface StoreUpdateResult<T, U extends StoreActionDatum<T>> extends StoreUpdateResultData<T, U> {
+	retry(failedData: StoreActionData<T, U>): Promise<StoreUpdateResult<T, U>>;
 	store: Store<T>;
 }
 
-export type StoreUpdateFunction<T> = () => Promise<StoreUpdateResult<T>>
+export type StoreUpdateFunction<T, U extends StoreActionDatum<T>> = () => Promise<StoreUpdateResult<T, U>>
 
 export type StoreActionDatum<T> = T | string | { id: string, patch: Patch<T, T> };
-export type StoreActionData<T> = StoreActionDatum<T>[];
+export type StoreActionData<T, U extends StoreActionDatum<T>> = U[];
 
 export interface StoreAction<T> {
 	do(): Promise<any>;
 	observable: Observable<StoreActionResult<T>>;
 	type: StoreActionType;
 	targetedVersion: number;
-	targetedItems: StoreActionData<T>;
+	targetedItems: StoreActionData<T, StoreActionDatum<T>>;
 }
 
 export interface StoreActionResult<T> {
@@ -44,47 +55,47 @@ export interface StoreActionResult<T> {
 }
 
 export function createPutAction<T>(
-	fn: StoreUpdateFunction<T>,
-	targetItems: StoreActionData<T>,
+	fn: StoreUpdateFunction<T, T>,
+	targetItems: StoreActionData<T, T>,
 	store: Store<T>,
-	existingFailures?: StoreActionData<T>,
+	existingFailures?: StoreActionData<T, T>,
 	currentItems?: T[]) {
 	return createAction(fn, StoreActionType.Put, targetItems, store, existingFailures, currentItems);
 }
 
 export function createAddAction<T>(
-	fn: StoreUpdateFunction<T>,
-	targetItems: StoreActionData<T>,
+	fn: StoreUpdateFunction<T, T>,
+	targetItems: StoreActionData<T, T>,
 	store: Store<T>,
-	existingFailures?: StoreActionData<T>,
+	existingFailures?: StoreActionData<T, T>,
 	currentItems?: T[]) {
 	return createAction(fn, StoreActionType.Add, targetItems, store, existingFailures, currentItems);
 }
 
 export function createDeleteAction<T>(
-	fn: StoreUpdateFunction<T>,
-	targetItems: StoreActionData<T>,
+	fn: StoreUpdateFunction<T, string>,
+	targetItems: StoreActionData<T, string>,
 	store: Store<T>,
-	existingFailures?: StoreActionData<T>,
+	existingFailures?: StoreActionData<T, string>,
 	currentItems?: T[]) {
 	return createAction(fn, StoreActionType.Delete, targetItems, store, existingFailures, currentItems);
 }
 
 export function createPatchAction<T>(
-	fn: StoreUpdateFunction<T>,
-	targetItems: StoreActionData<T>,
+	fn: StoreUpdateFunction<T, { id: string; patch: Patch<T, T> }>,
+	targetItems: StoreActionData<T, { id: string; patch: Patch<T, T> } >,
 	store: Store<T>,
-	existingFailures?: StoreActionData<T>,
+	existingFailures?: StoreActionData<T, { id: string; patch: Patch<T, T> }>,
 	currentItems?: T[]) {
 	return createAction(fn, StoreActionType.Patch, targetItems, store, existingFailures, currentItems);
 }
 
-function createAction<T>(
-	fn: StoreUpdateFunction<T>,
+function createAction<T, U extends StoreActionDatum<T>>(
+	fn: StoreUpdateFunction<T, U>,
 	type: StoreActionType,
-	targetItems: StoreActionData<T>,
+	targetItems: StoreActionData<T, U>,
 	store: Store<T>,
-	existingFailures?: StoreActionData<T>,
+	existingFailures?: StoreActionData<T, U>,
 	existingCurrentItems?: T[]): StoreAction<T> {
 	let done = false;
 
@@ -106,16 +117,14 @@ function createAction<T>(
 
 	function updateResultToActionResult (
 		action: StoreAction<T>,
-		result: StoreUpdateResult<T>): void {
-		const currentItems = (existingCurrentItems || result.currentItems) ?
-			[ ...(existingCurrentItems || []), ...(result.currentItems || []) ] : null;
-		const failedData = (existingFailures || result.failedData) ?
-			[ ...(existingFailures || []), ...(result.failedData || []) ] : null;
+		result: StoreUpdateResult<T, StoreActionDatum<T>>): void {
+		const currentItems = [ ...(existingCurrentItems || []), ...(result.currentItems || []) ];
+		const failedData = [ ...(existingFailures || []), ...(result.failedData || []) ];
 		lastResult = {
 			retried: false,
 			action: action,
 			type: type,
-			withErrors: Boolean(result.failedData),
+			withErrors: Boolean(result.failedData.length),
 			retryAll() {
 				if (!this.retried && (!lastResult || lastResult.withErrors)) {
 					this.retried = true;
