@@ -46,10 +46,10 @@ export function diff<T, U>(from: T, to: U): Patch<T, U> {
 export function createPatch(operations: Operation[]) {
 	return {
 		operations: operations,
-		apply(target: any) {
+		apply(this: Patch<any, any>, target: any) {
 			return this.operations.reduce((prev: any, next: Operation) => next.apply(prev), target);
 		},
-		toString() {
+		toString(this: Patch<any, any>) {
 			return '[' + this.operations.reduce((prev: string, next: Operation) => {
 					if (prev) {
 						return prev + ',' + next.toString();

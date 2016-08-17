@@ -12,17 +12,16 @@
     "url": "https://github.com/dojo/core.git"
   },
   "scripts": {
-    "prepublish": "grunt dist",
+    "prepublish": "grunt peerDepInstall dist",
     "test": "grunt test"
   },
   "typings": "./dist/umd/dojo-store-prototype.d.ts",
-  "dependencies": {
+  "peerDependencies": {
     "@reactivex/rxjs": ">5.0.0-beta",
-    "dojo-compose": "2.0.0-beta.7",
-    "dojo-loader": "2.0.0-beta.5",
-    "dojo-core": "2.0.0-alpha.8",
-    "dojo-shim": "2.0.0-alpha.1",
-  	"dojo-has": "2.0.0-alpha.1"
+    "dojo-compose": "next",
+    "dojo-core": "next",
+    "dojo-shim": "next",
+    "dojo-has": "next"
   },
   "devDependencies": {
     "codecov.io": ">=0.1.6",

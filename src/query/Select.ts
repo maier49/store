@@ -28,7 +28,7 @@ export function createSelect<T extends U, U>(properties: U, serializer?: (select
 	return {
 		properties: properties,
 		queryType: QueryType.Select,
-		toString(serializeSelect?: ((query: Query<any, any>) => string) | ((select: Select<T, U>) => string)): string {
+		toString(this: Select<T, U>, serializeSelect?: ((query: Query<any, any>) => string) | ((select: Select<T, U>) => string)): string {
 			return (serializeSelect || serializer || serialize)(this);
 		},
 		apply: (data: T[]) => data.map(item => <U> performSelection.reduce((prev, next) => next(prev, item), {}))

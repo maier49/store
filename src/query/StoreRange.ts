@@ -10,7 +10,7 @@ export function rangeFactory<T>(start: number, count: number, serializer?: (rang
 	return {
 		apply: (data: T[]) => data.slice(start, start + count),
 		queryType: QueryType.Range,
-		toString(rangeSerializer?: ((query: Query<any, any>) => string) | ((range: StoreRange<T>) => string) ) {
+		toString(this: StoreRange<T>, rangeSerializer?: ((query: Query<any, any>) => string) | ((range: StoreRange<T>) => string) ) {
 			return (rangeSerializer || serializer || serializeRange)(this);
 		},
 		start: start,

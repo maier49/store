@@ -88,14 +88,14 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 	const filter: Filter<T> = {
 		test: item => applyFilterChain(item, filters),
 		filterType: FilterType.Compound,
-		apply(data: T[]) {
+		apply(this: Filter<T>, data: T[]) {
 			return data.filter(this.test);
 		},
 		filterChain: filters,
-		toString(filterSerializer?: ((query: Query<any, any>) => string) | ((filter: Filter<T>) => string)) {
+		toString(this: Filter<T>, filterSerializer?: ((query: Query<any, any>) => string) | ((filter: Filter<T>) => string)) {
 			return (filterSerializer || serializer)(this);
 		},
-		and(newFilter?: Filter<T>) {
+		and(this: Filter<T>, newFilter?: Filter<T>) {
 			let newFilters: FilterChainMember<T>[] = [];
 			if (newFilter) {
 				newFilters.push(this, BooleanOp.And, newFilter);
@@ -104,7 +104,7 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 			}
 			return createFilterHelper(newFilters, serializer);
 		},
-		or(newFilter?: Filter<T>) {
+		or(this: Filter<T>, newFilter?: Filter<T>) {
 			let newFilters: FilterChainMember<T>[] = [];
 			if (newFilter) {
 				newFilters.push(this, BooleanOp.Or, newFilter);
@@ -240,7 +240,7 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			let propertyValue: any = path ? navigate(<JsonPointer> path, item) : item;
 			return test(propertyValue);
 		},
-		apply(data: T[]) {
+		apply(this: Filter<T>, data: T[]) {
 			return data.filter(this.test);
 		},
 		toString() {
