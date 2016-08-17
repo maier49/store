@@ -45,21 +45,21 @@ function navigatePath(target: any, path: JsonPointer) {
 	};
 }
 
-function add(target: any) {
+function add(this: Add, target: any) {
 	const applyTo = navigatePath(target, this.path);
 	applyTo.object[applyTo.property] = this.value;
 
 	return target;
 }
 
-function remove(target: any) {
+function remove(this: Remove, target: any) {
 	const applyTo = navigatePath(target, this.path);
 	delete applyTo.object[applyTo.property];
 
 	return target;
 }
 
-function replace(target: any) {
+function replace(this: Replace, target: any) {
 	const applyTo = navigatePath(target, this.path);
 	if (typeof applyTo.object[applyTo.property] === 'undefined') {
 		throw new Error(`Cannot replace undefined path: ${this.path.toString()} on object`);
@@ -84,17 +84,17 @@ function copyOrMove(from: JsonPointer, to: JsonPointer, target: any, toDelete: b
 
 }
 
-function move(target: any) {
+function move(this: Move, target: any) {
 	copyOrMove(this.from, this.path, target, true);
 	return target;
 }
 
-function copy(target: any) {
+function copy(this: Copy, target: any) {
 	copyOrMove(this.from, this.path, target, false);
 	return target;
 }
 
-function test(target: any) {
+function test(this: Test, target: any) {
 	const applyTo = navigatePath(target, this.path);
 	return isEqual(applyTo.object[applyTo.property], this.value);
 }
@@ -126,7 +126,7 @@ function getPath(path: JsonPointer | string[]) {
 	}
 }
 
-function toString() {
+function toString(this: Operation & { value?: any, from?: any } ) {
 	let jsonObj: any = {};
 	jsonObj.op = this.op;
 	jsonObj.path = this.path.toString();

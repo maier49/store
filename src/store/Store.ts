@@ -124,9 +124,9 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected observers: Observer<MultiUpdate<T>>[] = [];
 	protected actionManager: StoreActionManager<T>;
 	protected removeObservers: number[] = [];
-	protected observable: Observable<MultiUpdate<T>> = new Observable<MultiUpdate<T>>(function subscribe(observer: Observer<MultiUpdate<T>>) {
+	protected observable: Observable<MultiUpdate<T>> = new Observable<MultiUpdate<T>>(function subscribe(this: BaseStore<T>, observer: Observer<MultiUpdate<T>>) {
 		this.observers.push(observer);
-		this.fetch().then(function(data: T[]) {
+		this.fetch().then(function(this: Store<T>, data: T[]) {
 			if (data.length) {
 				const update: ItemsAdded<T> = {
 					type: 'add',
@@ -156,7 +156,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		}
 
 		if (this.source) {
-			this.sourceSubscription = this.source.observe().subscribe(function(update: MultiUpdate<T>) {
+			this.sourceSubscription = this.source.observe().subscribe(function(this: BaseStore<T>, update: MultiUpdate<T>) {
 				this.observers.forEach((observer: Observer<MultiUpdate<T>>) => observer.next({
 					type: 'basic'
 				}));
@@ -203,7 +203,7 @@ export abstract class BaseStore<T> implements Store<T> {
 				this.sourceSubscription.unsubscribe();
 				this.sourceSubscription = null;
 			}
-			return this.fetch().then(function(data: T[]) {
+			return this.fetch().then(function(this: BaseStore<T>, data: T[]) {
 				this.data = duplicate(data);
 				this.source = null;
 				this.isLive = false;
@@ -219,13 +219,13 @@ export abstract class BaseStore<T> implements Store<T> {
 			if (this.sourceSubscription) {
 				this.sourceSubscription.unsubscribe();
 			}
-			this.sourceSubscription = this.source.observe().subscribe(function(update: MultiUpdate<T>) {
+			this.sourceSubscription = this.source.observe().subscribe(function(this: BaseStore<T>, update: MultiUpdate<T>) {
 				this.propagateUpdate(update);
 			});
 		}
 
 		this.isLive = true;
-		return this.fetch().then(function() {
+		return this.fetch().then(function(this: BaseStore<T>) {
 			return this;
 		});
 	}
@@ -581,7 +581,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		return function(): Promise<StoreUpdateResult<T, U>> {
 			const prefilteredData: FilteredData<T, U> = self.failOnDirtyData ?
 				self.rejectDirtyData(data, targetedVersion) : { data: data };
-			return updateFn.call(self, prefilteredData.data).then(function(resultData: StoreUpdateResultData<T, U>) {
+			return updateFn.call(self, prefilteredData.data).then(function(this: Store<T>, resultData: StoreUpdateResultData<T, U>) {
 				self.version++;
 				resultData.successfulData.updates.forEach(update => {
 					if (self.map.has(update.id)) {

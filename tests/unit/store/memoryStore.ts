@@ -73,7 +73,7 @@ const patches: { id: string; patch: Patch<ItemType, ItemType> }[] =
 registerSuite({
 	name: 'memory store',
 
-	'initialize store'() {
+	'initialize store'(this: any) {
 		const dfd = this.async(1000);
 		const store: Store<ItemType> = new MemoryStore({
 			data: data
@@ -86,7 +86,7 @@ registerSuite({
 
 	'basic operations': {
 		'put': {
-			'should add new items'() {
+			'should add new items'(this: any) {
 				const dfd = this.async(1000);
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				// Add items with put
@@ -114,7 +114,7 @@ registerSuite({
 				});
 			},
 
-			'should update existing items'() {
+			'should update existing items'(this: any) {
 				const dfd = this.async(1000);
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
@@ -148,7 +148,7 @@ registerSuite({
 				});
 			},
 
-			'should provide a diff from the old data to the new data'() {
+			'should provide a diff from the old data to the new data'(this: any) {
 				const dfd = this.async(1000);
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
@@ -173,7 +173,7 @@ registerSuite({
 		}
 	},
 
-	'fetch with queries'() {
+	'fetch with queries'(this: any) {
 		const dfd = this.async(1000);
 		const store: Store<ItemType> = new MemoryStore({
 			data: data
@@ -195,7 +195,7 @@ registerSuite({
 	},
 
 	'observation': {
-		'should be able to observe the store'() {
+		'should be able to observe the store'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
@@ -208,7 +208,7 @@ registerSuite({
 			store.add(...data);
 		},
 
-		'should receive an update when initial items are stored'() {
+		'should receive an update when initial items are stored'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
 				data: data
@@ -221,7 +221,7 @@ registerSuite({
 			});
 		},
 
-		'should be able to observe a single item'() {
+		'should be able to observe a single item'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
@@ -263,7 +263,7 @@ registerSuite({
 			store.delete(data[0].id);
 		},
 
-		'should be able to observe multiple items'() {
+		'should be able to observe multiple items'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
@@ -330,7 +330,7 @@ registerSuite({
 			store.delete(data[2].id);
 		},
 
-		'should complete item observations when all relevant items are deleted'() {
+		'should complete item observations when all relevant items are deleted'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
@@ -357,7 +357,7 @@ registerSuite({
 	},
 
 	'updates, ordering, and conflicts': {
-		'should execute calls in order in which they are called'() {
+		'should execute calls in order in which they are called'(this: any) {
 			const store: Store<ItemType> = new MemoryStore<ItemType>({});
 			const dfd = this.async(1000);
 			let retrievalCount = 0;
@@ -393,7 +393,7 @@ registerSuite({
 			});
 		},
 
-		'should optionally reject changes to dirty data'() {
+		'should optionally reject changes to dirty data'(this: any) {
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
@@ -416,7 +416,7 @@ registerSuite({
 	},
 
 	're-attempting updates': {
-		'should be able to reattempt all failed updates'() {
+		'should be able to reattempt all failed updates'(this: any) {
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
@@ -443,7 +443,7 @@ registerSuite({
 			});
 		},
 
-		'should be able to selectively reattempt updates'() {
+		'should be able to selectively reattempt updates'(this: any) {
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
@@ -475,7 +475,7 @@ registerSuite({
 			});
 		},
 
-		'should complete operation observation when the operation is successfully completed'() {
+		'should complete operation observation when the operation is successfully completed'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
 				failOnDirtyData: true
@@ -516,7 +516,7 @@ registerSuite({
 	},
 
 	'transactions': {
-		'should allow chaining of operations'() {
+		'should allow chaining of operations'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 
@@ -541,7 +541,7 @@ registerSuite({
 	},
 
 	'subcollections': {
-		'should retrieve source collection\'s data with queries'() {
+		'should retrieve source collection\'s data with queries'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
@@ -572,7 +572,7 @@ registerSuite({
 			spies.forEach(spy => assert.isTrue(spy.calledOnce));
 		},
 
-		'should be notified of changes in parent collection'() {
+		'should be notified of changes in parent collection'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			const calls: Array<() => any> = [

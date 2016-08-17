@@ -125,13 +125,13 @@ function createAction<T, U extends StoreActionDatum<T>>(
 			action: action,
 			type: type,
 			withErrors: Boolean(result.failedData.length),
-			retryAll() {
+			retryAll(this: { retried: boolean }) {
 				if (!this.retried && (!lastResult || lastResult.withErrors)) {
 					this.retried = true;
 					result.retry(failedData).then(updateResultToActionResult.bind(null, action));
 				}
 			},
-			filter(shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean) {
+			filter(this: { retried: boolean }, shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean) {
 				if (!this.retried && (!lastResult || lastResult.withErrors)) {
 					this.retried = true;
 					result.retry(
@@ -155,13 +155,12 @@ function createAction<T, U extends StoreActionDatum<T>>(
 	}
 
 	return <StoreAction<T>> {
-		do() {
+		do(this: StoreAction<T>) {
 			if (done) {
 				throw Error('This action has alrady been completed. Cannot perform the same action twice');
 			}
 			done = true;
-			const self = <StoreAction<T>> this;
-			return fn().then(updateResultToActionResult.bind(null, self));
+			return fn().then(updateResultToActionResult.bind(null, this));
 		},
 		observable: observable,
 		type: type,
