@@ -2,13 +2,14 @@ import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
 import * as sinon from 'sinon';
 import MemoryStore from '../../../src/store/MemoryStore';
-import { Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded } from '../../../src/store/Store';
+import { Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded, ItemsUpdated } from '../../../src/store/Store';
 import { StoreActionResult } from '../../../src/storeActions/StoreAction';
 import Patch, { diff } from '../../../src/patch/Patch';
 import { createPointer } from '../../../src/patch/JsonPointer';
 import { CompoundQuery } from '../../../src/query/Query';
 import { createFilter } from '../../../src/query/Filter';
 import { createSort } from '../../../src/query/Sort';
+import { duplicate } from 'dojo-core/lang';
 
 interface ItemType {
 	id: string;
@@ -81,6 +82,95 @@ registerSuite({
 		store.fetch().then(dfd.callback(function(fetchedData: ItemType[]) {
 			assert.deepEqual(fetchedData, data, 'Fetched data didn\'t match provided data');
 		}));
+	},
+
+	'basic operations': {
+		'put': {
+			'should add new items'() {
+				const dfd = this.async(1000);
+				const store: Store<ItemType> = new MemoryStore<ItemType>();
+				// Add items with put
+				store.put(data[0], data[1]);
+				store.put(data[2]);
+				let count = 0;
+				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+					count++;
+					try {
+						assert.deepEqual(update.type, 'update', 'Should emit an update event');
+						if (count === 1) {
+							assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item),
+								[ data[0], data[1] ], 'Should have returned first two items after first update');
+						} else {
+							assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item),
+								[ data[2] ], 'Should have returned last item after second update');
+						}
+					} catch (e) {
+						dfd.reject(e);
+					}
+					if (count === 2) {
+						subscription.unsubscribe();
+						dfd.resolve();
+					}
+				});
+			},
+
+			'should update existing items'() {
+				const dfd = this.async(1000);
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+				// Add items with put
+				store.put(updates[0][0], updates[0][1]);
+				store.put(updates[0][2]);
+				let count = -1;
+				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+					count++;
+					if (count === 0) {
+						// First update will just contain the initial data
+						return;
+					}
+					try {
+						assert.deepEqual(update.type, 'update', 'Should emit an update event');
+						if (count === 1) {
+							assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item),
+								[ updates[0][0], updates[0][1] ], 'Should have returned first two items after first update');
+						} else {
+							assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item),
+								[ updates[0][2] ], 'Should have returned last item after second update');
+						}
+					} catch (e) {
+						dfd.reject(e);
+					}
+					if (count === 2) {
+						subscription.unsubscribe();
+						dfd.resolve();
+					}
+				});
+			},
+
+			'should provide a diff from the old data to the new data'() {
+				const dfd = this.async(1000);
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+				store.put(...updates[0]);
+
+				let ignoreFirst = true;
+				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
+					// Ignore first update which is for adding items
+					if (ignoreFirst) {
+						ignoreFirst = false;
+						return;
+					}
+					const copy = duplicate(data);
+					const patches: Patch<ItemType, ItemType>[] =
+						(<ItemsUpdated<ItemType>> update).updates.map(update => update.diff());
+					copy.forEach((item, index) => patches[index].apply(item));
+					assert.deepEqual(copy, (<ItemsUpdated<ItemType>> update).updates.map(update => update.item), 'Didn\'t return correct diffs');
+			}));
+
+			}
+		}
 	},
 
 	'fetch with queries'() {
@@ -476,16 +566,30 @@ registerSuite({
 			];
 			subCollection.put(data[0]);
 			subCollection.add(data[0]);
-			subCollection.delete(data[0].id);
 			subCollection.patch(patches[0]);
+			subCollection.delete(data[0].id);
 
 			spies.forEach(spy => assert.isTrue(spy.calledOnce));
 		},
 
-		'TODO - should be notified of changes in parent collection'() {
-			// const dfd = this.async(1000);
-			// const store: Store<ItemType> = new MemoryStore<ItemType>();
-			// const subCollection = store.filter(store.createFilter().lessThan('value', 3));
+		'should be notified of changes in parent collection'() {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+			const calls: Array<() => any> = [
+				() => store.put(...updates[0]),
+				() => store.patch(patches),
+				() => store.delete(data[0].id)
+			];
+			const subCollection = store.filter(store.createFilter().lessThan('value', 3));
+			store.add(data[0]);
+			subCollection.observe().subscribe(function() {
+				let nextCall: () => any = calls.shift();
+				if (nextCall) {
+					nextCall();
+				} else {
+					dfd.resolve();
+				}
+			});
 		}
 	}
 });

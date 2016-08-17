@@ -38,7 +38,7 @@ export interface ItemAdded<T> extends Update<T> {
 
 export interface ItemUpdated<T> extends ItemAdded<T> {
 	previousIndex?: number;
-	diff: () => Patch<T, T>;
+	diff?: () => Patch<T, T>;
 }
 
 export interface ItemDeleted extends Update<any> {
