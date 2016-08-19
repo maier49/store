@@ -19,3 +19,5 @@ bower_components
 .baseDir.ts
 html-report
 *.lcov
+.idea/
+.vscode/

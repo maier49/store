@@ -2,7 +2,7 @@ import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
 import * as sinon from 'sinon';
 import MemoryStore from '../../../src/store/MemoryStore';
-import { Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded, ItemsUpdated } from '../../../src/store/Store';
+import { Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded, ItemsUpdated, ItemsDeleted } from '../../../src/store/Store';
 import { StoreActionResult } from '../../../src/storeActions/StoreAction';
 import Patch, { diff } from '../../../src/patch/Patch';
 import { createPointer } from '../../../src/patch/JsonPointer';
@@ -85,6 +85,68 @@ registerSuite({
 	},
 
 	'basic operations': {
+		'add': {
+			'should add new items'(this: any) {
+				const dfd = this.async(1000);
+				const store: Store<ItemType> = new MemoryStore<ItemType>();
+				// Add items with put
+				store.add(data[0], data[1]);
+				store.add(data[2]);
+				let count = 0;
+				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+					count++;
+					try {
+						assert.deepEqual(update.type, 'add', 'Should emit an add event');
+						if (count === 1) {
+							assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item),
+								[ data[0], data[1] ], 'Should have returned first two items after first update');
+						} else {
+							assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item),
+								[ data[2] ], 'Should have returned last item after second update');
+						}
+					} catch (e) {
+						dfd.reject(e);
+					}
+					if (count === 2) {
+						dfd.resolve();
+					}
+				});
+			},
+
+			'add action with existing items should fail'(this: any) {
+				const dfd = this.async(1000);
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+				// Update items with add
+				store.add(updates[0][2]).subscribe(function success() {
+					dfd.reject(new Error('Should not call success callback.'));
+				}, function error() {
+					dfd.resolve();
+				});
+			},
+
+			'should not update existing items successfully'(this: any) {
+				const dfd = this.async(1000);
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+				let ignoreFirst = true;
+				store.observe(updates[0][2].id).subscribe(function() {
+					// Ignore first update which is for adding items
+					if (ignoreFirst) {
+						ignoreFirst = false;
+						return;
+					}
+					dfd.reject(new Error('Should not call success callback.'));
+				}, function(error: Error) {
+					dfd.resolve();
+				});
+
+				// Update items with add
+				store.add(updates[0][2]);
+			}
+		},
 		'put': {
 			'should add new items'(this: any) {
 				const dfd = this.async(1000);
@@ -221,6 +283,24 @@ registerSuite({
 			});
 		},
 
+		'should not receive initial updates when subscribed after initial items were stored'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>({
+				data: data
+			});
+			store.fetch().then(function(data: ItemType[]) {
+				assert.isTrue(data.length > 0, 'initial items should have been stored.');
+
+				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
+					assert.notStrictEqual(update.type, 'add', 'Should not have received add updates happened before subscription.');
+					assert.strictEqual(update.type, 'update', 'Should have received updates made after subscription');
+					dfd.resolve();
+				}));
+
+				store.put(updates[0][2]);
+			});
+		},
+
 		'should be able to observe a single item'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore({
@@ -353,6 +433,34 @@ registerSuite({
 			store.delete(data[0].id, data[1].id);
 			store.put(updates[0][2]);
 			store.delete(data[2].id);
+		},
+
+		'should not allow observing on non-existing ids'(this: any) {
+			const dfd = this.async(1000);
+			const idNotExist = '4';
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+			store.observe(idNotExist).subscribe(function success() {
+				dfd.reject(new Error('Should not call success callback.'));
+			}, function error() {
+				dfd.resolve();
+			});
+		},
+
+		'should include non-existing ids in the error message'(this: any) {
+			const dfd = this.async(1000);
+			const idNonExisting = '4';
+			const idExisting = '2';
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+			store.observe([idExisting, idNonExisting]).subscribe(function success() {},
+			dfd.callback( function(error: Error) {
+				assert.isTrue(error.message.indexOf(idExisting) === -1, `${idExisting} should not be included in the error message`);
+				assert.isTrue(error.message.indexOf(idNonExisting) !== -1, `${idNonExisting} should be included in the error message`);
+				dfd.resolve();
+			}));
 		}
 	},
 
@@ -537,6 +645,55 @@ registerSuite({
 						});
 					}
 				);
+		},
+		'should receive all action results in the transaction in order'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+			let count = 0;
+			store.transaction()
+				.add(...data)
+				.put(...updates[0])
+				.delete(data[0].id)
+				.commit()
+				.subscribe(dfd.callback(function(result: StoreActionResult<ItemType>) {
+					if (count === 0) {
+						assert.strictEqual(result.successfulData.type, 'add', '1st action should be of type "add"');
+						assert.strictEqual(result.successfulData.updates.length, 3);
+					} else if (count === 1) {
+						assert.strictEqual(result.successfulData.type, 'update', '2nd action should be of type "update"');
+						assert.strictEqual(result.successfulData.updates.length, 3);
+					} else if (count === 2) {
+						assert.strictEqual(result.successfulData.type, 'delete', '3rd action should be of type "delete"');
+						assert.strictEqual(result.successfulData.updates.length, 1);
+						dfd.resolve();
+					}
+					count++;
+				}));
+		},
+		'should receive all updates made in the transaction in order'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+			let count = 0;
+			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
+				if (count === 0) {
+						assert.strictEqual(update.type, 'add', '1st update should be of type "add"');
+						assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data);
+				} else if (count === 1) {
+					assert.strictEqual(update.type, 'update', '2nd update should be of type "update"');
+					assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item), updates[0]);
+				} else if (count === 2) {
+					assert.strictEqual(update.type, 'delete', '3rd update should be of type "delete"');
+					assert.deepEqual((<ItemsDeleted<ItemType>> update).updates.map(update => update.id), data[0].id);
+					dfd.resolve();
+				}
+				count++;
+			}));
+
+			store.transaction()
+				.add(...data)
+				.put(...updates[0])
+				.delete(data[0].id)
+				.commit();
 		}
 	},
 

@@ -486,8 +486,8 @@ export abstract class BaseStore<T> implements Store<T> {
 				const idSet = new Set<string>(ids);
 				self.get(...ids).then((items: T[]) => {
 					const retrievedIdSet = new Set<string>(self.getIds(...items));
-					let missingItemIds: string[];
-					if (retrievedIdSet.size !== idSet.size || (missingItemIds = ids.filter(id => !retrievedIdSet.has(id))).length) {
+					let missingItemIds = ids.filter(id => !retrievedIdSet.has(id));
+					if (retrievedIdSet.size !== idSet.size || missingItemIds.length) {
 						observer.error(new Error(`ID(s) "${missingItemIds}" not found in store`));
 					} else {
 						const observerEntry: { observes: Set<string>; observer: Observer<Update<T>>} = {
