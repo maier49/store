@@ -83,7 +83,7 @@ export class SyncAggressiveActionManager<T> extends BaseActionManager<T> {
 	actionManager(action: StoreAction<T>, completedCallback: () => void) {
 		let count = 1;
 		const subscription = action.observable.subscribe(function(this: SyncAggressiveActionManager<T>, result: StoreActionResult<T>) {
-			if (!result.withErrors || count > this.persistence) {
+			if (!result.withConflicts || count > this.persistence) {
 				subscription.unsubscribe();
 				completedCallback();
 			} else {
@@ -106,7 +106,7 @@ export class AsyncAgressiveActionManager<T> extends BaseActionManager<T> {
 		let count = 1;
 		const subscription = action.observable.subscribe(function(this: AsyncAgressiveActionManager<T>, result: StoreActionResult<T>) {
 			completedCallback();
-			if (!result.withErrors || count > this.persistence) {
+			if (!result.withConflicts || count > this.persistence) {
 				subscription.unsubscribe();
 			} else {
 				count ++;

@@ -46,7 +46,7 @@ export interface StoreAction<T> {
 export interface StoreActionResult<T> {
 	readonly retried: boolean;
 	action: StoreAction<T>;
-	withErrors: boolean;
+	withConflicts: boolean;
 	retryAll(): void;
 	type: StoreActionType;
 	filter(shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean): void;
@@ -98,7 +98,6 @@ function createAction<T, U extends StoreActionDatum<T>>(
 	existingFailures?: StoreActionData<T, U>,
 	existingCurrentItems?: T[]): StoreAction<T> {
 	let done = false;
-
 	let lastResult: StoreActionResult<T>;
 	let observers: Observer<StoreActionResult<T>>[] = [];
 	let remove: number[] = [];
@@ -106,7 +105,7 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		if (lastResult) {
 			observer.next(lastResult);
 		}
-		if (lastResult && !lastResult.withErrors) {
+		if (lastResult && !lastResult.withConflicts) {
 			observer.complete();
 		} else {
 			observers.push(observer);
@@ -115,40 +114,63 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		return () => remove.push(observers.indexOf(observer));
 	});
 
-	function updateResultToActionResult (
+	function updateResultToActionResult(
 		action: StoreAction<T>,
-		result: StoreUpdateResult<T, StoreActionDatum<T>>): void {
+		result: StoreUpdateResult<T, StoreActionDatum<T>>
+	): void {
+		let isRetrying = false;
+		let inLoop = false;
 		const currentItems = [ ...(existingCurrentItems || []), ...(result.currentItems || []) ];
 		const failedData = [ ...(existingFailures || []), ...(result.failedData || []) ];
+
+		function throwIfRetryIsForbidden(): void {
+			if (lastResult && lastResult.retried) {
+				throw new Error('Cannot call retry the same result object more than once. Wait for the next result object');
+			}
+			if (lastResult && !lastResult.withConflicts) {
+				throw new Error('Cannot retry a successful action');
+			}
+			if (!inLoop) {
+				throw new Error('Action can only be retried synchronously within the "next" callback of the observer');
+			}
+		}
 		lastResult = {
 			retried: false,
 			action: action,
 			type: type,
-			withErrors: Boolean(result.failedData.length),
-			retryAll(this: { retried: boolean }) {
-				if (!this.retried && (!lastResult || lastResult.withErrors)) {
-					this.retried = true;
+			withConflicts: Boolean(result.failedData.length),
+			retryAll(this: { retried: boolean }): void {
+				throwIfRetryIsForbidden();
+				this.retried = true;
+				if (failedData.length) {
+					isRetrying = true;
 					result.retry(failedData).then(updateResultToActionResult.bind(null, action));
 				}
 			},
-			filter(this: { retried: boolean }, shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean) {
-				if (!this.retried && (!lastResult || lastResult.withErrors)) {
-					this.retried = true;
-					result.retry(
-						failedData.filter((failedDatum, index) => shouldRetry(failedDatum, currentItems && currentItems[index]))
-					).then(updateResultToActionResult.bind(null, action));
+			filter(this: { retried: boolean }, shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean): void {
+				throwIfRetryIsForbidden();
+				this.retried = true;
+				const retryFor = failedData.filter(
+					(failedDatum, index) => shouldRetry(failedDatum, currentItems[index])
+				);
+				if (retryFor.length) {
+					isRetrying = true;
+					result.retry(retryFor).then(updateResultToActionResult.bind(null, action));
 				}
 			},
 			store: result.store,
 			successfulData: result.successfulData
 		};
 
+		inLoop = true;
 		observers.forEach(function(observer: Observer<StoreActionResult<T>>) {
 			observer.next(lastResult);
-			if (!lastResult.withErrors) {
+			if (!lastResult.withConflicts || !isRetrying) {
 				observer.complete();
 			}
+			isRetrying = false;
 		});
+		inLoop = false;
 		while (remove.length) {
 			observers.splice(remove.pop(), 1);
 		}
@@ -157,7 +179,7 @@ function createAction<T, U extends StoreActionDatum<T>>(
 	return <StoreAction<T>> {
 		do(this: StoreAction<T>) {
 			if (done) {
-				throw Error('This action has alrady been completed. Cannot perform the same action twice');
+				throw Error('This action has already been completed. Cannot perform the same action twice');
 			}
 			done = true;
 			return fn().then(updateResultToActionResult.bind(null, this));

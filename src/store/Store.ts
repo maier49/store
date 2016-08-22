@@ -267,12 +267,12 @@ export abstract class BaseStore<T> implements Store<T> {
 					.then((updateCandidates: { isUpdate: boolean; item: T; id: string }[]): T[] => updateCandidates
 						.filter(x => x.isUpdate)
 						.map(isUpdate => isUpdate.item)
-					).then((updates: T[]) => self.createUpdateFunction<T>(self._put, updates, version)),
+					).then((updates: T[]) => self.createUpdateFunction<T>(self._put, updates, null, version)),
 				updatesOrAdds
 					.then((addCandidates: { isUpdate: boolean; item: T; id: string }[]) => addCandidates
 						.filter(x => !x.isUpdate)
 						.map(isUpdate => isUpdate.item)
-					).then((adds: T[]) => self.createUpdateFunction(self._add, adds, version))
+					).then((adds: T[]) => self.createUpdateFunction(self._add, adds, null, version))
 			]).then(function([putUpdateFunction, addUpdateFunction]: StoreUpdateFunction<T, T>[]) {
 				return Promise.all([putUpdateFunction(), addUpdateFunction()])
 					.then(function([ putResults, addResults ]: StoreUpdateResult<T, T>[]) {
@@ -334,7 +334,7 @@ export abstract class BaseStore<T> implements Store<T> {
 
 	protected localAdd(items: T[]): Observable<StoreActionResult<T>> {
 		const self: BaseStore<T> = this;
-		const action = createAddAction(self.createUpdateFunction(self._add, items), items, self);
+		const action = createAddAction(self.createUpdateFunction(self._add, items, self._put), items, self);
 		this.actionManager.queue(action);
 		return action.observable;
 	}
@@ -573,7 +573,9 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected createUpdateFunction<U extends StoreActionDatum<T>>(
 		updateFn: StoreUpdateDataFunction<T, U>,
 		data: StoreActionData<T, U>,
-		targetedVersion?: number): () => Promise<StoreUpdateResult<T, U>> {
+		retryUpdateFn?: StoreUpdateDataFunction<T, U>,
+		targetedVersion?: number
+): () => Promise<StoreUpdateResult<T, U>> {
 		const self = <BaseStore<T>> this;
 		if (typeof targetedVersion === 'undefined') {
 			targetedVersion = self.version;
@@ -592,9 +594,11 @@ export abstract class BaseStore<T> implements Store<T> {
 					currentItems: [ ...(prefilteredData.currentItems || []), ...(resultData.currentItems || []) ],
 					failedData: [ ...(prefilteredData.failedData || []), ...(resultData.failedData || []) ],
 					successfulData: resultData.successfulData,
-					store: this,
+					store: self,
 					retry(failedData: StoreActionData<T, U>) {
-						return self.createUpdateFunction(updateFn, failedData)();
+						return self.actionManager.queue(
+							self.createUpdateFunction(retryUpdateFn || updateFn, failedData)
+						);
 					}
 				};
 			});

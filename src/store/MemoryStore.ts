@@ -124,7 +124,7 @@ export default class MemoryStore<T> extends BaseStore<T> {
 		} else {
 			dataPromise = Promise.resolve();
 			self.data = self.sourceQuery ?
-				self.sourceQuery.apply([...self.data, ...items]) : [...self.data, ...items];
+				self.sourceQuery.apply([...self.data, ...filteredItems]) : [...self.data, ...filteredItems];
 		}
 
 		return dataPromise.then(() => self.buildMap(self.data)).then(function(map) {

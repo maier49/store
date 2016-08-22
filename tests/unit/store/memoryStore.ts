@@ -113,38 +113,38 @@ registerSuite({
 				});
 			},
 
-			'add action with existing items should fail'(this: any) {
+			'add action with existing items should report conflicts, and allow overwriting with retry'(this: any) {
 				const dfd = this.async(1000);
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
 				});
+				let first = true;
 				// Update items with add
-				store.add(updates[0][2]).subscribe(function success() {
-					dfd.reject(new Error('Should not call success callback.'));
-				}, function error() {
-					dfd.resolve();
-				});
-			},
-
-			'should not update existing items successfully'(this: any) {
-				const dfd = this.async(1000);
-				const store: Store<ItemType> = new MemoryStore({
-					data: data
-				});
-				let ignoreFirst = true;
-				store.observe(updates[0][2].id).subscribe(function() {
-					// Ignore first update which is for adding items
-					if (ignoreFirst) {
-						ignoreFirst = false;
-						return;
+				store.add(updates[0][2]).subscribe(function handleResult(result: StoreActionResult<ItemType>) {
+					try {
+						if (first) {
+							assert.isTrue(result.withConflicts, 'Should have had conflicts for existing data');
+							store.fetch().then(function(currentData: ItemType[]) {
+								try {
+									assert.deepEqual(currentData, data,
+										'Should not have updated existing item after add');
+								} catch (e) {
+									dfd.reject(e);
+								}
+							});
+							result.retryAll();
+							first = false;
+						} else {
+							assert.isFalse(result.withConflicts, 'Should not have reported any conflicts after retry');
+							store.fetch().then(dfd.callback(function(currentData: ItemType[]) {
+								assert.deepEqual(currentData, [data[0], data[1], updates[0][2]],
+									'Should have updated item after retry');
+							}));
+						}
+					} catch (e) {
+						dfd.reject(e);
 					}
-					dfd.reject(new Error('Should not call success callback.'));
-				}, function(error: Error) {
-					dfd.resolve();
 				});
-
-				// Update items with add
-				store.add(updates[0][2]);
 			}
 		},
 		'put': {
@@ -229,7 +229,7 @@ registerSuite({
 						(<ItemsUpdated<ItemType>> update).updates.map(update => update.diff());
 					copy.forEach((item, index) => patches[index].apply(item));
 					assert.deepEqual(copy, (<ItemsUpdated<ItemType>> update).updates.map(update => update.item), 'Didn\'t return correct diffs');
-			}));
+				}));
 
 			}
 		}
@@ -250,22 +250,20 @@ registerSuite({
 			)
 				.withQuery(createSort(createPointer('nestedProperty', 'value')))
 		)
-			.then(function(fetchedData: ItemType[]) {
+			.then(dfd.callback(function(fetchedData: ItemType[]) {
 				assert.deepEqual(fetchedData, [data[1], data[0]], 'Data fetched with queries was incorrect');
-				dfd.resolve();
-			});
+			}));
 	},
 
 	'observation': {
 		'should be able to observe the store'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
-			store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 				assert.strictEqual(update.type, 'add', 'Should have received a notification about updates');
 				assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data,
 					'Should have received an update for all three items added');
-				dfd.resolve();
-			});
+			}));
 
 			store.add(...data);
 		},
@@ -275,27 +273,39 @@ registerSuite({
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
 				data: data
 			});
-			store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 				assert.strictEqual(update.type, 'add', 'Should have received a notification about updates');
 				assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data,
 					'Should have received an update for all three items added');
-				dfd.resolve();
-			});
+			}));
 		},
 
-		'should not receive initial updates when subscribed after initial items were stored'(this: any) {
+		'should receive initial update when subscribed after initial items were stored'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
 				data: data
 			});
 			store.fetch().then(function(data: ItemType[]) {
-				assert.isTrue(data.length > 0, 'initial items should have been stored.');
+				try {
+					assert.isTrue(data.length > 0, 'initial items should have been stored.');
+				} catch (e) {
+					dfd.reject(e);
+				}
 
-				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
-					assert.notStrictEqual(update.type, 'add', 'Should not have received add updates happened before subscription.');
-					assert.strictEqual(update.type, 'update', 'Should have received updates made after subscription');
-					dfd.resolve();
-				}));
+				let first = true;
+				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+					try {
+						if (first) {
+							assert.strictEqual(update.type, 'add', 'Should receive add updates for initial data');
+							first = false;
+						} else {
+							assert.strictEqual(update.type, 'update', 'Should receive updates made after subscription');
+							dfd.resolve();
+						}
+					} catch (e) {
+						dfd.reject(e);
+					}
+				});
 
 				store.put(updates[0][2]);
 			});
@@ -308,32 +318,36 @@ registerSuite({
 			});
 			let updateCount = -1;
 			store.observe(data[0].id).subscribe(function(update: Update<ItemType>) {
-				if (updateCount < 0) {
-					assert.strictEqual(update.type, 'add');
-					assert.deepEqual((<ItemAdded<ItemType>> update).item, data[0], 'Should receive an inital update with the item');
-				} else {
-					if (updateCount === 3) {
-						assert.strictEqual(update.type, 'delete');
+				try {
+					if (updateCount < 0) {
+						assert.strictEqual(update.type, 'add');
+						assert.deepEqual((<ItemAdded<ItemType>> update).item, data[0], 'Should receive an inital update with the item');
 					} else {
-						assert.strictEqual(update.type, 'update');
+						if (updateCount === 3) {
+							assert.strictEqual(update.type, 'delete');
+						} else {
+							assert.strictEqual(update.type, 'update');
+						}
+						if (updateCount === 3) {
+							assert.strictEqual(update.id, data[0].id, 'Wrong ID received for delete notification');
+						} else if (updateCount ===  2) {
+							assert.deepEqual((<ItemUpdated<ItemType>> update).item, {
+								id: '1',
+								value: 3,
+								nestedProperty: {
+									value: 5
+								}
+							}, 'Didn\'t receive update for patch');
+						} else {
+							assert.deepEqual((<ItemUpdated<ItemType>> update).item, updates[updateCount][0], 'Didn\'t receive updated item');
+						}
 					}
-					if (updateCount === 3) {
-						assert.strictEqual(update.id, data[0].id, 'Wrong ID received for delete notification');
-					} else if (updateCount ===  2) {
-						assert.deepEqual((<ItemUpdated<ItemType>> update).item, {
-							id: '1',
-							value: 3,
-							nestedProperty: {
-								value: 5
-							}
-						}, 'Didn\'t receive update for patch');
-					} else {
-						assert.deepEqual((<ItemUpdated<ItemType>> update).item, updates[updateCount][0], 'Didn\'t receive updated item');
+					updateCount++;
+					if (updateCount === 4) {
+						dfd.resolve();
 					}
-				}
-				updateCount++;
-				if (updateCount === 4) {
-					dfd.resolve();
+				} catch (e) {
+					dfd.reject(e);
 				}
 			});
 
@@ -383,25 +397,29 @@ registerSuite({
 			}
 
 			store.observe([ data[0].id, data[1].id, data[2].id ]).subscribe(function(update: Update<ItemType>) {
-				if (update.type === 'add') {
-					addIds.push(update.id);
-					checkUpdate(<ItemAdded<ItemType>> update, true);
-				} else if (update.type === 'update') {
-					assert.equal(addIds.length, 3, 'Updates received out of order');
-					assert.equal(deleteIds.length, 0, 'Updates received out of order');
-					updateIds.push(update.id);
-					checkUpdate(<ItemUpdated<ItemType>> update);
-				} else {
-					assert.equal(updateIds.length, 3, 'Updates received out of order');
-					deleteIds.push(update.id);
-					if (deleteIds.length === 3) {
-						assert.isTrue(
-							containsItemIds(addIds) &&
-							containsItemIds(updateIds) &&
-							containsItemIds(deleteIds), 'Didn\'t receive expected updates'
-						);
-						dfd.resolve();
+				try {
+					if (update.type === 'add') {
+						addIds.push(update.id);
+						checkUpdate(<ItemAdded<ItemType>> update, true);
+					} else if (update.type === 'update') {
+						assert.equal(addIds.length, 3, 'Updates received out of order');
+						assert.equal(deleteIds.length, 0, 'Updates received out of order');
+						updateIds.push(update.id);
+						checkUpdate(<ItemUpdated<ItemType>> update);
+					} else {
+						assert.equal(updateIds.length, 3, 'Updates received out of order');
+						deleteIds.push(update.id);
+						if (deleteIds.length === 3) {
+							assert.isTrue(
+								containsItemIds(addIds) &&
+								containsItemIds(updateIds) &&
+								containsItemIds(deleteIds), 'Didn\'t receive expected updates'
+							);
+							dfd.resolve();
+						}
 					}
+				} catch (e) {
+					dfd.reject(e);
 				}
 			});
 
@@ -422,11 +440,10 @@ registerSuite({
 					observationCount++;
 				},
 				function error() {},
-				function completed() {
+				dfd.callback(function completed() {
 					assert.equal(observationCount, 10,
 						'Should have received updates for adding items, all updates, and all deletions before completion');
-					dfd.resolve();
-				}
+				})
 			);
 
 			store.put(...updates[0]);
@@ -456,10 +473,9 @@ registerSuite({
 				data: data
 			});
 			store.observe([idExisting, idNonExisting]).subscribe(function success() {},
-			dfd.callback( function(error: Error) {
+			dfd.callback(function(error: Error) {
 				assert.isTrue(error.message.indexOf(idExisting) === -1, `${idExisting} should not be included in the error message`);
 				assert.isTrue(error.message.indexOf(idNonExisting) !== -1, `${idNonExisting} should be included in the error message`);
-				dfd.resolve();
 			}));
 		}
 	},
@@ -473,32 +489,45 @@ registerSuite({
 			store.add(data[0]);
 			store.get(data[0].id).then(([ item ]) => {
 				retrievalCount++;
-				assert.deepEqual(item, data[0], 'Should have received initial item');
+				try {
+					assert.deepEqual(item, data[0], 'Should have received initial item');
+				} catch (e) {
+					dfd.reject(e);
+				}
 			});
 			store.put(updates[0][0]);
 			store.get(data[0].id).then(([ item ]) => {
 				retrievalCount++;
-				assert.deepEqual(item, updates[0][0], 'Should have received updated item');
+				try {
+					assert.deepEqual(item, updates[0][0], 'Should have received updated item');
+				} catch (e) {
+					dfd.reject(e);
+				}
 			});
 
 			store.put(updates[1][0]);
 			store.get(data[0].id).then(([ item ]) => {
-				assert.equal(retrievalCount, 2, 'Didn\'t perform gets in order');
-				assert.deepEqual(item, updates[1][0], 'Should have received second updated item');
+				try {
+					assert.equal(retrievalCount, 2, 'Didn\'t perform gets in order');
+					assert.deepEqual(item, updates[1][0], 'Should have received second updated item');
+				} catch (e) {
+					dfd.reject(e);
+				}
 				dfd.resolve();
 			});
 		},
 
-		'should overwrite dirty data by default'() {
+		'should overwrite dirty data by default'(this: any) {
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
+			const dfd = this.async(1000);
 			store.put(updates[0][0]);
-			store.put(updates[1][0]).subscribe(function(result: StoreActionResult<ItemType>) {
-				assert.isFalse(result.withErrors);
+			store.put(updates[1][0]).subscribe(dfd.callback(function(result: StoreActionResult<ItemType>) {
+				assert.isFalse(result.withConflicts);
 				assert.deepEqual((<ItemUpdated<ItemType>> result.successfulData.updates[0]).item, updates[1][0],
 					'Should have taken the second update');
-			});
+			}));
 		},
 
 		'should optionally reject changes to dirty data'(this: any) {
@@ -510,13 +539,16 @@ registerSuite({
 			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
 				store.put(updates[0][0]);
 				store.put(updates[1][0]).subscribe(function(result: StoreActionResult<ItemType>) {
-					assert.isTrue(result.withErrors);
-					result.filter((item: ItemType, currentItem?: ItemType) => {
+					try {
+						assert.isTrue(result.withConflicts);
+					} catch (e) {
+						dfd.reject(e);
+					}
+					result.filter(dfd.callback((item: ItemType, currentItem?: ItemType) => {
 						assert.deepEqual(item, updates[1][0], 'Failed update should be passed in filter');
 						assert.deepEqual(currentItem, updates[0][0], 'Should provide existing data for filter');
-						dfd.resolve();
 						return true;
-					});
+					}));
 				});
 				subscription.unsubscribe();
 			});
@@ -534,17 +566,21 @@ registerSuite({
 			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
 				store.put(...updates[0]);
 				store.put(...updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
-					if (firstTry) {
-						assert.isTrue(result.withErrors);
-						result.retryAll();
-						firstTry = false;
-					} else {
-						assert.isFalse(result.withErrors);
-						assert.equal(result.successfulData.updates.length, 3, 'Should have updated all three items');
-						result.successfulData.updates.forEach(function(update: ItemUpdated<ItemType>, index: number) {
-							assert.deepEqual(update.item, updates[1][index], 'Result should include updated data');
-						});
-						dfd.resolve();
+					try {
+						if (firstTry) {
+							assert.isTrue(result.withConflicts);
+							result.retryAll();
+							firstTry = false;
+						} else {
+							assert.isFalse(result.withConflicts);
+							assert.equal(result.successfulData.updates.length, 3, 'Should have updated all three items');
+							result.successfulData.updates.forEach(function(update: ItemUpdated<ItemType>, index: number) {
+								assert.deepEqual(update.item, updates[1][index], 'Result should include updated data');
+							});
+							dfd.resolve();
+						}
+					} catch (e) {
+						dfd.reject(e);
 					}
 				});
 				subscription.unsubscribe();
@@ -561,22 +597,26 @@ registerSuite({
 			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
 				store.put(...updates[0]);
 				store.put(...updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
-					if (firstTry) {
-						assert.isTrue(result.withErrors);
-						let count = 0;
-						result.filter((item: ItemType, currentItem?: ItemType) => {
-							assert.deepEqual(item, updates[1][count], 'Failed update should be passed in filter');
-							assert.deepEqual(currentItem, updates[0][count], 'Should provide existing data for filter');
-							count++;
-							return count % 2 === 0;
-						});
-						firstTry = false;
-					} else {
-						assert.isFalse(result.withErrors);
-						assert.strictEqual(result.successfulData.updates.length, 1, 'Should only have updated one item');
-						assert.deepEqual((<ItemUpdated<ItemType>> result.successfulData.updates[0]).item, updates[1][1],
-							'Results should reflect updated data');
-						dfd.resolve();
+					try {
+						if (firstTry) {
+							assert.isTrue(result.withConflicts);
+							let count = 0;
+							result.filter((item: ItemType, currentItem?: ItemType) => {
+								assert.deepEqual(item, updates[1][count], 'Failed update should be passed in filter');
+								assert.deepEqual(currentItem, updates[0][count], 'Should provide existing data for filter');
+								count++;
+								return count % 2 === 0;
+							});
+							firstTry = false;
+						} else {
+							assert.isFalse(result.withConflicts);
+							assert.strictEqual(result.successfulData.updates.length, 1, 'Should only have updated one item');
+							assert.deepEqual((<ItemUpdated<ItemType>> result.successfulData.updates[0]).item, updates[1][1],
+								'Results should reflect updated data');
+							dfd.resolve();
+						}
+					} catch (e) {
+						dfd.reject(e);
 					}
 				});
 				subscription.unsubscribe();
@@ -594,7 +634,11 @@ registerSuite({
 			let completedCount = 0;
 			store.put(updates[0][0]).subscribe(
 				function next(result) {
-					assert.isFalse(result.withErrors);
+					try {
+						assert.isFalse(result.withConflicts);
+					} catch (e) {
+						dfd.reject(e);
+					}
 					successCount++;
 				},
 				function error() {},
@@ -605,7 +649,7 @@ registerSuite({
 
 			store.put(...updates[1]).subscribe(
 				function next(result) {
-					if (result.withErrors) {
+					if (result.withConflicts) {
 						result.retryAll();
 						errorCount++;
 					} else {
@@ -613,12 +657,11 @@ registerSuite({
 					}
 				},
 				function error() {},
-				function completed() {
+				dfd.callback(function completed() {
 					assert.equal(errorCount, 1, 'Multi put should have failed for one dirty item');
 					assert.equal(successCount, 2, 'Both updates should have eventually succeesded');
 					assert.equal(completedCount, 1, 'Both updates should have completed');
-					dfd.resolve();
-				}
+				})
 			);
 		}
 	},
@@ -639,10 +682,9 @@ registerSuite({
 					function error() {
 					},
 					function completed() {
-						store.fetch().then(function(data) {
+						store.fetch().then(dfd.callback(function(data: ItemType[]) {
 							assert.deepEqual(data, updates[0].slice(1));
-							dfd.resolve();
-						});
+						}));
 					}
 				);
 		},
@@ -656,18 +698,22 @@ registerSuite({
 				.delete(data[0].id)
 				.commit()
 				.subscribe(dfd.callback(function(result: StoreActionResult<ItemType>) {
-					if (count === 0) {
-						assert.strictEqual(result.successfulData.type, 'add', '1st action should be of type "add"');
-						assert.strictEqual(result.successfulData.updates.length, 3);
-					} else if (count === 1) {
-						assert.strictEqual(result.successfulData.type, 'update', '2nd action should be of type "update"');
-						assert.strictEqual(result.successfulData.updates.length, 3);
-					} else if (count === 2) {
-						assert.strictEqual(result.successfulData.type, 'delete', '3rd action should be of type "delete"');
-						assert.strictEqual(result.successfulData.updates.length, 1);
-						dfd.resolve();
+					try {
+						if (count === 0) {
+							assert.strictEqual(result.successfulData.type, 'add', '1st action should be of type "add"');
+							assert.strictEqual(result.successfulData.updates.length, 3);
+						} else if (count === 1) {
+							assert.strictEqual(result.successfulData.type, 'update', '2nd action should be of type "update"');
+							assert.strictEqual(result.successfulData.updates.length, 3);
+						} else if (count === 2) {
+							assert.strictEqual(result.successfulData.type, 'delete', '3rd action should be of type "delete"');
+							assert.strictEqual(result.successfulData.updates.length, 1);
+							dfd.resolve();
+						}
+						count++;
+					} catch (e) {
+						dfd.reject(e);
 					}
-					count++;
 				}));
 		},
 		'should receive all updates made in the transaction in order'(this: any) {
@@ -675,18 +721,22 @@ registerSuite({
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			let count = 0;
 			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
-				if (count === 0) {
+				try {
+					if (count === 0) {
 						assert.strictEqual(update.type, 'add', '1st update should be of type "add"');
 						assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data);
-				} else if (count === 1) {
-					assert.strictEqual(update.type, 'update', '2nd update should be of type "update"');
-					assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item), updates[0]);
-				} else if (count === 2) {
-					assert.strictEqual(update.type, 'delete', '3rd update should be of type "delete"');
-					assert.deepEqual((<ItemsDeleted<ItemType>> update).updates.map(update => update.id), data[0].id);
-					dfd.resolve();
+					} else if (count === 1) {
+						assert.strictEqual(update.type, 'update', '2nd update should be of type "update"');
+						assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item), updates[0]);
+					} else if (count === 2) {
+						assert.strictEqual(update.type, 'delete', '3rd update should be of type "delete"');
+						assert.deepEqual((<ItemsDeleted<ItemType>> update).updates.map(update => update.id), data[0].id);
+						dfd.resolve();
+					}
+					count++;
+				} catch (e) {
+					dfd.reject(e);
 				}
-				count++;
 			}));
 
 			store.transaction()
@@ -706,10 +756,9 @@ registerSuite({
 			store
 				.filter(store.createFilter().lessThan('value', 3))
 				.sort('value', true)
-				.fetch().then(function(fetchedData) {
+				.fetch().then(dfd.callback(function(fetchedData: ItemType[]) {
 					assert.deepEqual(fetchedData, [data[1], data[0]]);
-					dfd.resolve();
-				});
+				}));
 		},
 
 		'should delegate to source collection'() {
