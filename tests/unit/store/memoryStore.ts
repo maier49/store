@@ -9,6 +9,7 @@ import { createPointer } from '../../../src/patch/JsonPointer';
 import { CompoundQuery } from '../../../src/query/Query';
 import { createFilter } from '../../../src/query/Filter';
 import { createSort } from '../../../src/query/Sort';
+import { createRange } from '../../../src/query/StoreRange';
 import { duplicate } from 'dojo-core/lang';
 
 interface ItemType {
@@ -124,6 +125,7 @@ registerSuite({
 					try {
 						if (first) {
 							assert.isTrue(result.withConflicts, 'Should have had conflicts for existing data');
+							assert.isTrue(result.successfulData.updates.length === 0, 'Should not have successful data in the result');
 							store.fetch().then(function(currentData: ItemType[]) {
 								try {
 									assert.deepEqual(currentData, data,
@@ -136,6 +138,8 @@ registerSuite({
 							first = false;
 						} else {
 							assert.isFalse(result.withConflicts, 'Should not have reported any conflicts after retry');
+							assert.isTrue(result.successfulData.updates.length === 1);
+							assert.deepEqual((<ItemUpdated<ItemType>> result.successfulData.updates[0]).item, updates[0][2], 'Should have updated item after retry');
 							store.fetch().then(dfd.callback(function(currentData: ItemType[]) {
 								assert.deepEqual(currentData, [data[0], data[1], updates[0][2]],
 									'Should have updated item after retry');
@@ -235,24 +239,92 @@ registerSuite({
 		}
 	},
 
-	'fetch with queries'(this: any) {
-		const dfd = this.async(1000);
-		const store: Store<ItemType> = new MemoryStore({
-			data: data
-		});
+	'fetch': {
+		'should fetch with sort applied'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
 
-		store.fetch(
-			new CompoundQuery(
-				createFilter()
-					.deepEqualTo(createPointer('nestedProperty', 'value'), 2)
-					.or()
-					.deepEqualTo(createPointer('nestedProperty', 'value'), 3)
+			store.fetch(createSort<ItemType>('id', true))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[2], data[1], data[0]], 'Data fetched with sort was incorrect');
+				}));
+		},
+		'should allow fetch with sort on a sorted store'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			store.sort(createSort<ItemType>('id', true)).fetch(createSort<ItemType>('id', false))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[0], data[1], data[2]], 'Data fetched with sort was incorrect');
+				}));
+		},
+		'should fetch with filter applied'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			store.fetch(createFilter<ItemType>().lessThan('value', 2))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[0]], 'Data fetched with filter was incorrect');
+				}));
+		},
+		'should allow fetch with filter on a filtered store'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			store.filter(createFilter<ItemType>().greaterThanOrEqualTo('value', 2)).fetch(createFilter<ItemType>().lessThan('value', 3))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[1]], 'Data fetched with filter was incorrect');
+				}));
+		},
+		'should fetch with range applied'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			store.fetch(createRange<ItemType>(1, 2))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[1], data[2]], 'Data fetched with range was incorrect');
+				}));
+		},
+		'should allow fetch with range on a range filtered store'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			store.range(1, 2).fetch(createRange<ItemType>(1, 1))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[2]], 'Data fetched with range was incorrect');
+				}));
+		},
+		'should fetch with CompoundQuery applied'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: data
+			});
+
+			store.fetch(
+				new CompoundQuery(
+					createFilter()
+						.deepEqualTo(createPointer('nestedProperty', 'value'), 2)
+						.or()
+						.deepEqualTo(createPointer('nestedProperty', 'value'), 3)
+				)
+					.withQuery(createSort(createPointer('nestedProperty', 'value')))
 			)
-				.withQuery(createSort(createPointer('nestedProperty', 'value')))
-		)
-			.then(dfd.callback(function(fetchedData: ItemType[]) {
-				assert.deepEqual(fetchedData, [data[1], data[0]], 'Data fetched with queries was incorrect');
-			}));
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [data[1], data[0]], 'Data fetched with queries was incorrect');
+				}));
+		}
 	},
 
 	'observation': {

@@ -7,7 +7,7 @@ import Map from 'dojo-shim/Map';
 import { after } from 'dojo-core/aspect';
 import { Observer, Observable, Subscription } from 'rxjs';
 import { Sort, createSort } from '../query/Sort';
-import StoreRange, { rangeFactory } from '../query/StoreRange';
+import StoreRange, { createRange } from '../query/StoreRange';
 import { QueryType } from '../query/Query';
 import { duplicate } from 'dojo-core/lang';
 import { Transaction, SimpleTransaction } from './Transaction';
@@ -397,7 +397,7 @@ export abstract class BaseStore<T> implements Store<T> {
 	range(rangeOrStart: StoreRange<T> | number, count?: number) {
 		let range: StoreRange<T>;
 		if (typeof count !== 'undefined') {
-			range = rangeFactory<T>(<number> rangeOrStart, count);
+			range = createRange<T>(<number> rangeOrStart, count);
 		} else {
 			range = <StoreRange<T>> rangeOrStart;
 		}

@@ -6,7 +6,7 @@ interface StoreRange<T> extends Query<T, T> {
 
 export default StoreRange;
 
-export function rangeFactory<T>(start: number, count: number, serializer?: (range: StoreRange<T>) => string): StoreRange<T> {
+export function createRange<T>(start: number, count: number, serializer?: (range: StoreRange<T>) => string): StoreRange<T> {
 	return {
 		apply: (data: T[]) => data.slice(start, start + count),
 		queryType: QueryType.Range,
