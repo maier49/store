@@ -17,11 +17,11 @@
   },
   "typings": "./dist/umd/dojo-store-prototype.d.ts",
   "peerDependencies": {
-    "@reactivex/rxjs": ">5.0.0-beta",
-    "dojo-compose": "2.0.0-beta.7",
-    "dojo-core": "2.0.0-alpha.8",
-    "dojo-shim": "2.0.0-alpha.1",
-  	"dojo-has": "2.0.0-alpha.1"
+    "@reactivex/rxjs": "5.0.0-beta.6",
+    "dojo-compose": ">=2.0.0-beta.9",
+    "dojo-core": ">=2.0.0-alpha.11",
+    "dojo-shim": ">=2.0.0-alpha.3",
+    "dojo-has": ">=2.0.0-alpha.3"
   },
   "devDependencies": {
     "codecov.io": ">=0.1.6",
@@ -40,7 +40,7 @@
     "remap-istanbul": ">=0.6.3",
     "intern": "^3.2.3",
     "istanbul": "^0.4.3",
-    "tslint": "^3.11.0",
-    "typescript": "beta"
+    "tslint": "next",
+    "typescript": "2.1.0-dev.20160819"
   }
 }
