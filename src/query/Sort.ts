@@ -23,14 +23,18 @@ export function createSort<T>(
 		} else {
 			pointer = <JsonPointer> comparatorOrProperty;
 		}
-		comparator = (a: T, b: T) => sortValue(navigate(pointer, a), navigate(pointer, b));
+		comparator = function(a: T, b: T) {
+			return sortValue(navigate(pointer, a), navigate(pointer, b));
+		};
 	}
 
 	if (descending) {
 		comparator = flip(comparator);
 	}
 	return {
-		apply: (data: T[]) => data.sort(comparator),
+		apply(data: T[]) {
+			return data.sort(comparator);
+		},
 		comparatorOrProperty: comparatorOrProperty,
 		descending: descending,
 		queryType: QueryType.Sort,
@@ -44,7 +48,9 @@ export function createSort<T>(
 }
 
 function flip<T>(comparator: (a: T, b: T) => number) {
-	return (a: T, b: T) => -1 * comparator(a, b);
+	return function(a: T, b: T) {
+		return -1 * comparator(a, b);
+	};
 }
 
 function serialize(sort: Sort<any>) {

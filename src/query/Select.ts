@@ -14,9 +14,11 @@ function buildOperations(obj: any, key?: JsonPointer): Array<(to: any, from: any
 	}
 	const value: any = navigate(key, obj);
 	if (shouldRecurseInto(value)) {
-		return Object.keys(value).reduce((prev, next) => [ ...prev, ...buildOperations(value, key.push(next)) ], []);
+		return Object.keys(value).reduce(function(prev, next) {
+			return [...prev, ...buildOperations(value, key.push(next))];
+		}, []);
 	} else {
-		return [ (to: any, from: any) => {
+		return [ function(to: any, from: any) {
 			navigate(key.pop(), to)[key.segments().pop()] = navigate(key, from);
 			return to;
 		} ];
@@ -31,7 +33,9 @@ export function createSelect<T extends U, U>(properties: U, serializer?: (select
 		toString(this: Select<T, U>, serializeSelect?: ((query: Query<any, any>) => string) | ((select: Select<T, U>) => string)): string {
 			return (serializeSelect || serializer || serialize)(this);
 		},
-		apply: (data: T[]) => data.map(item => <U> performSelection.reduce((prev, next) => next(prev, item), {}))
+		apply(data: T[]) {
+			return data.map(item => <U> performSelection.reduce((prev, next) => next(prev, item), {}));
+		}
 	};
 }
 

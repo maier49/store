@@ -124,9 +124,6 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		const failedData = [ ...(existingFailures || []), ...(result.failedData || []) ];
 
 		function throwIfRetryIsForbidden(): void {
-			if (lastResult && lastResult.retried) {
-				throw new Error('Cannot call retry the same result object more than once. Wait for the next result object');
-			}
 			if (lastResult && !lastResult.withConflicts) {
 				throw new Error('Cannot retry a successful action');
 			}
@@ -141,6 +138,9 @@ function createAction<T, U extends StoreActionDatum<T>>(
 			withConflicts: Boolean(result.failedData.length),
 			retryAll(this: { retried: boolean }): void {
 				throwIfRetryIsForbidden();
+				if (this.retried) {
+					return;
+				}
 				this.retried = true;
 				if (failedData.length) {
 					isRetrying = true;
@@ -149,6 +149,9 @@ function createAction<T, U extends StoreActionDatum<T>>(
 			},
 			filter(this: { retried: boolean }, shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean): void {
 				throwIfRetryIsForbidden();
+				if (this.retried) {
+					return;
+				}
 				this.retried = true;
 				const retryFor = failedData.filter(
 					(failedDatum, index) => shouldRetry(failedDatum, currentItems[index])
@@ -165,11 +168,13 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		inLoop = true;
 		observers.forEach(function(observer: Observer<StoreActionResult<T>>) {
 			observer.next(lastResult);
-			if (!lastResult.withConflicts || !isRetrying) {
-				observer.complete();
-			}
-			isRetrying = false;
 		});
+		if (!lastResult.withConflicts || !isRetrying) {
+			observers.forEach(function(observer) {
+				observer.complete();
+			});
+		}
+		isRetrying = false;
 		inLoop = false;
 		while (remove.length) {
 			observers.splice(remove.pop(), 1);

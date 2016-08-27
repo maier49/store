@@ -86,7 +86,9 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 	}
 
 	const filter: Filter<T> = {
-		test: item => applyFilterChain(item, filters),
+		test(item) {
+			return applyFilterChain(item, filters);
+		},
 		filterType: FilterType.Compound,
 		apply(this: Filter<T>, data: T[]) {
 			return data.filter(this.test);
@@ -113,18 +115,42 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 			}
 			return createFilterHelper(newFilters, serializer);
 		},
-		lessThan: (path: ObjectPointer, value: number) => comparatorFilterHelper(FilterType.LessThan, value, path),
-		lessThanOrEqualTo: (path: ObjectPointer, value: number) => comparatorFilterHelper(FilterType.LessThanOrEqualTo, value, path),
-		greaterThan: (path: ObjectPointer, value: number) => comparatorFilterHelper(FilterType.GreaterThan, value, path),
-		greaterThanOrEqualTo: (path: ObjectPointer, value: number) => comparatorFilterHelper(FilterType.GreaterThanOrEqualTo, value, path),
-		matches: (path: ObjectPointer, value: RegExp) => comparatorFilterHelper(FilterType.Matches, value, path),
-		'in': (path: ObjectPointer, value: any) => comparatorFilterHelper(FilterType.In, value, path),
-		contains: (path: ObjectPointer, value: any) => comparatorFilterHelper(FilterType.Contains, value, path),
-		equalTo: (path: ObjectPointer, value: any) => comparatorFilterHelper(FilterType.EqualTo, value, path),
-		deepEqualTo: (path: ObjectPointer, value: any) => comparatorFilterHelper(FilterType.DeepEqualTo, value, path),
-		notEqualTo: (path: ObjectPointer, value: any) => comparatorFilterHelper(FilterType.NotEqualTo, value, path),
-		notDeepEqualTo: (path: ObjectPointer, value: any) => comparatorFilterHelper(FilterType.NotDeepEqualTo, value, path),
-		custom: (test: (item: T) => boolean) => comparatorFilterHelper(FilterType.Custom, test),
+		lessThan(path: ObjectPointer, value: number) {
+			return comparatorFilterHelper(FilterType.LessThan, value, path);
+		},
+		lessThanOrEqualTo(path: ObjectPointer, value: number) {
+			return comparatorFilterHelper(FilterType.LessThanOrEqualTo, value, path);
+		},
+		greaterThan(path: ObjectPointer, value: number) {
+			return comparatorFilterHelper(FilterType.GreaterThan, value, path);
+		},
+		greaterThanOrEqualTo(path: ObjectPointer, value: number) {
+			return comparatorFilterHelper(FilterType.GreaterThanOrEqualTo, value, path);
+		},
+		matches(path: ObjectPointer, value: RegExp) {
+			return comparatorFilterHelper(FilterType.Matches, value, path);
+		},
+		'in': function(path: ObjectPointer, value: any) {
+			return comparatorFilterHelper(FilterType.In, value, path);
+		},
+		contains(path: ObjectPointer, value: any) {
+			return comparatorFilterHelper(FilterType.Contains, value, path);
+		},
+		equalTo(path: ObjectPointer, value: any) {
+			return comparatorFilterHelper(FilterType.EqualTo, value, path);
+		},
+		deepEqualTo(path: ObjectPointer, value: any) {
+			return comparatorFilterHelper(FilterType.DeepEqualTo, value, path);
+		},
+		notEqualTo(path: ObjectPointer, value: any) {
+			return comparatorFilterHelper(FilterType.NotEqualTo, value, path);
+		},
+		notDeepEqualTo(path: ObjectPointer, value: any) {
+			return comparatorFilterHelper(FilterType.NotDeepEqualTo, value, path);
+		},
+		custom(test: (item: T) => boolean) {
+			return comparatorFilterHelper(FilterType.Custom, test);
+		},
 		queryType: QueryType.Filter
 	};
 
@@ -170,47 +196,63 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 	switch (operator) {
 		case FilterType.LessThan:
 			filterType = FilterType.LessThan;
-			test = property => property < value;
+			test = function(property) {
+				return property < value;
+			};
 			operatorString = 'lt';
 			break;
 		case FilterType.LessThanOrEqualTo:
 			filterType = FilterType.LessThanOrEqualTo;
-			test = property => property <= value;
+			test = function(property) {
+				return property <= value;
+			};
 			operatorString = 'lte';
 			break;
 		case FilterType.GreaterThan:
 			filterType = FilterType.GreaterThan;
-			test = property => property > value;
+			test = function(property) {
+				return property > value;
+			};
 			operatorString = 'gt';
 			break;
 		case FilterType.GreaterThanOrEqualTo:
 			filterType = FilterType.GreaterThanOrEqualTo;
-			test = property => property >= value;
+			test = function(property) {
+				return property >= value;
+			};
 			operatorString = 'gte';
 			break;
 		case FilterType.EqualTo:
 			filterType = FilterType.EqualTo;
-			test = property => property === value;
+			test = function(property) {
+				return property === value;
+			};
 			operatorString = 'eq';
 			break;
 		case FilterType.NotEqualTo:
 			filterType = FilterType.NotEqualTo;
-			test = property => property !== value;
+			test = function(property) {
+				return property !== value;
+			};
 			operatorString = 'ne';
 			break;
 		case FilterType.DeepEqualTo:
 			filterType = FilterType.DeepEqualTo;
-			test = property => isEqual(property, value);
+			test = function(property) {
+				return isEqual(property, value);
+			};
 			operatorString = 'eq';
 			break;
 		case FilterType.NotDeepEqualTo:
 			filterType = FilterType.NotDeepEqualTo;
-			test = property => !isEqual(property, value);
+			test = function(property) {
+				return !isEqual(property, value);
+			};
 			operatorString = 'ne';
 			break;
 		case FilterType.Contains:
 			filterType = FilterType.Contains;
-			test = propertyOrItem => {
+			test = function(propertyOrItem) {
 				if (Array.isArray(propertyOrItem)) {
 					return propertyOrItem.indexOf(value) > -1;
 				} else {
@@ -221,12 +263,16 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			break;
 		case FilterType.In:
 			filterType = FilterType.In;
-			test = propertyOrItem => Array.isArray(value) && value.indexOf(propertyOrItem) > -1;
+			test = function(propertyOrItem) {
+				return Array.isArray(value) && value.indexOf(propertyOrItem) > -1;
+			};
 			operatorString = 'in';
 			break;
 		case FilterType.Matches:
 			filterType = FilterType.Matches;
-			test = property => value.test(property);
+			test = function(property) {
+				return value.test(property);
+			};
 			break;
 		case FilterType.Custom:
 			filterType = FilterType.Custom;
@@ -236,7 +282,7 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			return null;
 	}
 	return {
-		test: (item: T) => {
+		test(item: T) {
 			let propertyValue: any = path ? navigate(<JsonPointer> path, item) : item;
 			return test(propertyValue);
 		},

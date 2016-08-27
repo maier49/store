@@ -27,7 +27,7 @@ function navigatePath(target: any, path: JsonPointer) {
 	let lastSegment: string;
 	const pathSegments = path.segments();
 	pathSegments.forEach(
-		(segment, index) => {
+		function(segment, index) {
 			currentPath += `/${segment}`;
 			if (typeof target === 'undefined') {
 				throw new Error(`Invalid path: ${currentPath} doesn't exist in target`);

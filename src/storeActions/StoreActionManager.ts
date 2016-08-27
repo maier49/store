@@ -8,6 +8,9 @@ interface StoreActionManager<T> {
 	queue(actions: StoreAction<T>[]): void;
 	queue<T, U extends StoreActionDatum<T>>(updateFunction: StoreUpdateFunction<T, U>): Promise<StoreUpdateResult<T, U>>;
 	queue<T>(nonUpdate: () => Promise<T>): Promise<T>;
+	retry(action: StoreAction<T>): void;
+	retry<T, U extends StoreActionDatum<T>>(updateFunction: StoreUpdateFunction<T, U>): Promise<StoreUpdateResult<T, U>>;
+	retry<T>(nonUpdate: () => Promise<T>): Promise<T>;
 	actionManager(actionResult: StoreAction<T>, completedCallback: () => void): void;
 }
 
@@ -48,6 +51,7 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 			return returnVal;
 		});
 	}
+
 	queue(action: StoreAction<T>): void;
 	queue(actions: StoreAction<T>[]): void;
 	queue<U extends StoreActionDatum<T>>(updateFunction: StoreUpdateFunction<T, U>): Promise<StoreUpdateResult<T, U>>;
@@ -70,6 +74,13 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 			});
 		}
 	}
+
+	retry(action: StoreAction<T>): void;
+	retry<U extends StoreActionDatum<T>>(updateFunction: StoreUpdateFunction<T, U>): Promise<StoreUpdateResult<T, U>>;
+	retry<U>(nonUpdateFunction: () => Promise<U>): Promise<U>;
+	retry<U extends StoreActionDatum<T>>(actionActionsOrUpdateFunction: StoreAction<T> | StoreUpdateFunction<T, U> | (() => Promise<U>)): void | Promise<StoreUpdateResult<T, U>> | Promise<U> {
+		return this.queue(<any> actionActionsOrUpdateFunction);
+	}
 }
 
 export class SyncAggressiveActionManager<T> extends BaseActionManager<T> {
@@ -82,14 +93,17 @@ export class SyncAggressiveActionManager<T> extends BaseActionManager<T> {
 
 	actionManager(action: StoreAction<T>, completedCallback: () => void) {
 		let count = 1;
-		const subscription = action.observable.subscribe(function(this: SyncAggressiveActionManager<T>, result: StoreActionResult<T>) {
-			if (!result.withConflicts || count > this.persistence) {
-				subscription.unsubscribe();
-				completedCallback();
-			} else {
+		const subscription = action.observable.subscribe(
+			function(this: SyncAggressiveActionManager<T>, result: StoreActionResult<T>) {
+			if (result.withConflicts && count < this.persistence) {
 				count ++;
 				result.retryAll();
 			}
+		},
+		null,
+		function() {
+			subscription.unsubscribe();
+			completedCallback();
 		});
 	}
 }
@@ -118,9 +132,11 @@ export class AsyncAgressiveActionManager<T> extends BaseActionManager<T> {
 
 export class AsyncPassiveActionManager<T> extends BaseActionManager<T> {
 	actionManager(action: StoreAction<T>, completedCallback: () => void) {
-		const subscription = action.observable.subscribe(function(result: StoreActionResult<T>) {
-			completedCallback();
-			subscription.unsubscribe();
+		const subscription = action.observable.subscribe(function() {
+			setTimeout(function() {
+				completedCallback();
+				subscription.unsubscribe();
+			}, 0);
 		});
 	}
 }

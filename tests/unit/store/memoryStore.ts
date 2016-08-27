@@ -2,7 +2,10 @@ import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
 import * as sinon from 'sinon';
 import MemoryStore from '../../../src/store/MemoryStore';
-import { Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded, ItemsUpdated, ItemsDeleted } from '../../../src/store/Store';
+import {
+	Store, MultiUpdate, ItemsAdded, Update, ItemUpdated, ItemAdded, ItemsUpdated, ItemsDeleted,
+	BatchUpdate
+} from '../../../src/store/Store';
 import { StoreActionResult } from '../../../src/storeActions/StoreAction';
 import Patch, { diff } from '../../../src/patch/Patch';
 import { createPointer } from '../../../src/patch/JsonPointer';
@@ -11,6 +14,7 @@ import { createFilter } from '../../../src/query/Filter';
 import { createSort } from '../../../src/query/Sort';
 import { createRange } from '../../../src/query/StoreRange';
 import { duplicate } from 'dojo-core/lang';
+import Map from 'dojo-shim/Map';
 
 interface ItemType {
 	id: string;
@@ -18,49 +22,53 @@ interface ItemType {
 	nestedProperty: { value: number };
 }
 
-const data: ItemType[] = [
-	{
-		id: '1',
-		value: 1,
-		nestedProperty: { value: 3 }
-	},
-	{
-		id: '2',
-		value: 2,
-		nestedProperty: { value: 2 }
-	},
-	{
-		id: '3',
-		value: 3,
-		nestedProperty: { value: 1 }
-	}
-];
+function createData(): ItemType[] {
+	return [
+		{
+			id: '1',
+			value: 1,
+			nestedProperty: { value: 3 }
+		},
+		{
+			id: '2',
+			value: 2,
+			nestedProperty: { value: 2 }
+		},
+		{
+			id: '3',
+			value: 3,
+			nestedProperty: { value: 1 }
+		}
+	];
+}
 
-const updates: ItemType[][] = [
-	data.map(function ({ id, value, nestedProperty: { value: nestedValue } }) {
-		return {
-			id: id,
-			value: value + 1,
-			nestedProperty: {
-				value: nestedValue
-			}
-		};
-	}),
-	data.map(function ({ id, value, nestedProperty: { value: nestedValue } }) {
-		return {
-			id: id,
-			value: value + 1,
-			nestedProperty: {
-				value: nestedValue + 1
-			}
-		};
-	})
-];
+function createUpdates(): ItemType[][] {
+	return [
+		createData().map(function ({ id, value, nestedProperty: { value: nestedValue } }) {
+			return {
+				id: id,
+				value: value + 1,
+				nestedProperty: {
+					value: nestedValue
+				}
+			};
+		}),
+		createData().map(function ({ id, value, nestedProperty: { value: nestedValue } }) {
+			return {
+				id: id,
+				value: value + 1,
+				nestedProperty: {
+					value: nestedValue + 1
+				}
+			};
+		})
+	];
+}
 const patches: { id: string; patch: Patch<ItemType, ItemType> }[] =
-	data.map(function ({ id, value, nestedProperty: { value: nestedValue } }, index) {
+	createData().map(function ({ id, value, nestedProperty: { value: nestedValue } }, index) {
 		return {
 			id: id,
-			patch: diff<ItemType, ItemType>(data[index], {
+			patch: diff<ItemType, ItemType>(createData()[index], {
 				id: id,
 				value: value + 2,
 				nestedProperty: {
@@ -76,6 +84,7 @@ registerSuite({
 
 	'initialize store'(this: any) {
 		const dfd = this.async(1000);
+		const data = createData();
 		const store: Store<ItemType> = new MemoryStore({
 			data: data
 		});
@@ -89,8 +98,9 @@ registerSuite({
 		'add': {
 			'should add new items'(this: any) {
 				const dfd = this.async(1000);
+				const data = createData();
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
-				// Add items with put
+				// Add items
 				store.add(data[0], data[1]);
 				store.add(data[2]);
 				let count = 0;
@@ -116,6 +126,8 @@ registerSuite({
 
 			'add action with existing items should report conflicts, and allow overwriting with retry'(this: any) {
 				const dfd = this.async(1000);
+				const data = createData();
+				const updates = createUpdates();
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
 				});
@@ -141,7 +153,7 @@ registerSuite({
 							assert.isTrue(result.successfulData.updates.length === 1);
 							assert.deepEqual((<ItemUpdated<ItemType>> result.successfulData.updates[0]).item, updates[0][2], 'Should have updated item after retry');
 							store.fetch().then(dfd.callback(function(currentData: ItemType[]) {
-								assert.deepEqual(currentData, [data[0], data[1], updates[0][2]],
+								assert.deepEqual(currentData, [ data[0], data[1], updates[0][2] ],
 									'Should have updated item after retry');
 							}));
 						}
@@ -154,6 +166,7 @@ registerSuite({
 		'put': {
 			'should add new items'(this: any) {
 				const dfd = this.async(1000);
+				const data = createData();
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				// Add items with put
 				store.put(data[0], data[1]);
@@ -182,6 +195,8 @@ registerSuite({
 
 			'should update existing items'(this: any) {
 				const dfd = this.async(1000);
+				const data = createData();
+				const updates = createUpdates();
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
 				});
@@ -216,6 +231,8 @@ registerSuite({
 
 			'should provide a diff from the old data to the new data'(this: any) {
 				const dfd = this.async(1000);
+				const data = createData();
+				const updates = createUpdates();
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
 				});
@@ -228,7 +245,7 @@ registerSuite({
 						ignoreFirst = false;
 						return;
 					}
-					const copy = duplicate(data);
+					const copy = createData();
 					const patches: Patch<ItemType, ItemType>[] =
 						(<ItemsUpdated<ItemType>> update).updates.map(update => update.diff());
 					copy.forEach((item, index) => patches[index].apply(item));
@@ -236,78 +253,129 @@ registerSuite({
 				}));
 
 			}
+		},
+
+		'patch': {
+			'should allow patching with a single update'(this: any) {
+				const dfd = this.async(1000);
+				const data = createData();
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+				store.patch(patches[0]).subscribe(dfd.callback(function(storeActionResult: StoreActionResult<ItemType>) {
+					assert.deepEqual(storeActionResult.successfulData.updates[0].item,
+						patches[0].patch.apply(createData()[0]), 'Should have patched item');
+				}));
+			},
+
+			'should allow patching with an array'(this: any) {
+				const dfd = this.async(1000);
+				const data = createData();
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+				const copy = createData();
+				store.patch(patches).subscribe(dfd.callback(function(storeActionResult: StoreActionResult<ItemType>) {
+					assert.deepEqual(storeActionResult.successfulData.updates.map(update => update.item),
+						patches.map((patchObj, i) => patchObj.patch.apply(copy[i])), 'Should have patched all items');
+				}));
+			},
+
+			'should allow patching with a Map'(this: any) {
+				const dfd = this.async(1000);
+				const data = createData();
+				const store: Store<ItemType> = new MemoryStore({
+					data: data
+				});
+
+				const map = new Map<string, Patch<ItemType, ItemType>>();
+				patches.forEach(patch => map.set(patch.id, patch.patch));
+
+				const copy = createData();
+				store.patch(<Map<string, Patch<ItemType, ItemType>>> map).subscribe(dfd.callback(function(storeActionResult: StoreActionResult<ItemType>) {
+					assert.deepEqual(storeActionResult.successfulData.updates.map(update => update.item),
+						patches.map((patchObj, i) => patchObj.patch.apply(copy[i])), 'Should have patched all items');
+				}));
+			}
 		}
 	},
 
 	'fetch': {
 		'should fetch with sort applied'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			store.fetch(createSort<ItemType>('id', true))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[2], data[1], data[0]], 'Data fetched with sort was incorrect');
+					assert.deepEqual(fetchedData, [ data[2], data[1], data[0] ], 'Data fetched with sort was incorrect');
 				}));
 		},
 		'should allow fetch with sort on a sorted store'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			store.sort(createSort<ItemType>('id', true)).fetch(createSort<ItemType>('id', false))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[0], data[1], data[2]], 'Data fetched with sort was incorrect');
+					assert.deepEqual(fetchedData, [ data[0], data[1], data[2] ], 'Data fetched with sort was incorrect');
 				}));
 		},
 		'should fetch with filter applied'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			store.fetch(createFilter<ItemType>().lessThan('value', 2))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[0]], 'Data fetched with filter was incorrect');
+					assert.deepEqual(fetchedData, [ data[0] ], 'Data fetched with filter was incorrect');
 				}));
 		},
 		'should allow fetch with filter on a filtered store'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			store.filter(createFilter<ItemType>().greaterThanOrEqualTo('value', 2)).fetch(createFilter<ItemType>().lessThan('value', 3))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[1]], 'Data fetched with filter was incorrect');
+					assert.deepEqual(fetchedData, [ data[1] ], 'Data fetched with filter was incorrect');
 				}));
 		},
 		'should fetch with range applied'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			store.fetch(createRange<ItemType>(1, 2))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[1], data[2]], 'Data fetched with range was incorrect');
+					assert.deepEqual(fetchedData, [ data[1], data[2] ], 'Data fetched with range was incorrect');
 				}));
 		},
 		'should allow fetch with range on a range filtered store'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			store.range(1, 2).fetch(createRange<ItemType>(1, 1))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[2]], 'Data fetched with range was incorrect');
+					assert.deepEqual(fetchedData, [ data[2] ], 'Data fetched with range was incorrect');
 				}));
 		},
 		'should fetch with CompoundQuery applied'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
@@ -322,7 +390,7 @@ registerSuite({
 					.withQuery(createSort(createPointer('nestedProperty', 'value')))
 			)
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[1], data[0]], 'Data fetched with queries was incorrect');
+					assert.deepEqual(fetchedData, [ data[1], data[0] ], 'Data fetched with queries was incorrect');
 				}));
 		}
 	},
@@ -330,6 +398,7 @@ registerSuite({
 	'observation': {
 		'should be able to observe the store'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 				assert.strictEqual(update.type, 'add', 'Should have received a notification about updates');
@@ -342,6 +411,7 @@ registerSuite({
 
 		'should receive an update when initial items are stored'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
 				data: data
 			});
@@ -352,51 +422,24 @@ registerSuite({
 			}));
 		},
 
-		'should receive initial update when subscribed after initial items were stored'(this: any) {
-			const dfd = this.async(1000);
-			const store: Store<ItemType> = new MemoryStore<ItemType>({
-				data: data
-			});
-			store.fetch().then(function(data: ItemType[]) {
-				try {
-					assert.isTrue(data.length > 0, 'initial items should have been stored.');
-				} catch (e) {
-					dfd.reject(e);
-				}
-
-				let first = true;
-				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
-					try {
-						if (first) {
-							assert.strictEqual(update.type, 'add', 'Should receive add updates for initial data');
-							first = false;
-						} else {
-							assert.strictEqual(update.type, 'update', 'Should receive updates made after subscription');
-							dfd.resolve();
-						}
-					} catch (e) {
-						dfd.reject(e);
-					}
-				});
-
-				store.put(updates[0][2]);
-			});
-		},
-
 		'should be able to observe a single item'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
-				data: data
+				data: data.map(item => duplicate(item))
 			});
 			let updateCount = -1;
 			store.observe(data[0].id).subscribe(function(update: Update<ItemType>) {
 				try {
 					if (updateCount < 0) {
 						assert.strictEqual(update.type, 'add');
-						assert.deepEqual((<ItemAdded<ItemType>> update).item, data[0], 'Should receive an inital update with the item');
+						assert.deepEqual((<ItemAdded<ItemType>> update).item, data[0], 'Should receive an initial update with the item');
 					} else {
 						if (updateCount === 3) {
 							assert.strictEqual(update.type, 'delete');
+						} else if (updateCount === 2) {
+							assert.strictEqual(update.type, 'patch');
 						} else {
 							assert.strictEqual(update.type, 'update');
 						}
@@ -431,6 +474,8 @@ registerSuite({
 
 		'should be able to observe multiple items'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
@@ -502,12 +547,14 @@ registerSuite({
 
 		'should complete item observations when all relevant items are deleted'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
 
 			let observationCount = 0;
-			store.observe([data[0].id, data[1].id, data[2].id]).subscribe(
+			store.observe([ data[0].id, data[1].id, data[2].id ]).subscribe(
 				function next() {
 					observationCount++;
 				},
@@ -527,6 +574,7 @@ registerSuite({
 		'should not allow observing on non-existing ids'(this: any) {
 			const dfd = this.async(1000);
 			const idNotExist = '4';
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
@@ -541,6 +589,7 @@ registerSuite({
 			const dfd = this.async(1000);
 			const idNonExisting = '4';
 			const idExisting = '2';
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
@@ -556,6 +605,8 @@ registerSuite({
 		'should execute calls in order in which they are called'(this: any) {
 			const store: Store<ItemType> = new MemoryStore<ItemType>({});
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			let retrievalCount = 0;
 
 			store.add(data[0]);
@@ -590,6 +641,8 @@ registerSuite({
 		},
 
 		'should overwrite dirty data by default'(this: any) {
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
@@ -603,6 +656,8 @@ registerSuite({
 		},
 
 		'should optionally reject changes to dirty data'(this: any) {
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
@@ -629,6 +684,8 @@ registerSuite({
 
 	're-attempting updates': {
 		'should be able to reattempt all failed updates'(this: any) {
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
@@ -660,6 +717,8 @@ registerSuite({
 		},
 
 		'should be able to selectively reattempt updates'(this: any) {
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data,
 				failOnDirtyData: true
@@ -697,6 +756,7 @@ registerSuite({
 
 		'should complete operation observation when the operation is successfully completed'(this: any) {
 			const dfd = this.async(1000);
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
 				failOnDirtyData: true
 			});
@@ -742,6 +802,8 @@ registerSuite({
 		'should allow chaining of operations'(this: any) {
 			const dfd = this.async(1000);
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
+			const data = createData();
+			const updates = createUpdates();
 
 			store.transaction()
 				.add(...data)
@@ -762,6 +824,8 @@ registerSuite({
 		},
 		'should receive all action results in the transaction in order'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			let count = 0;
 			store.transaction()
@@ -790,6 +854,8 @@ registerSuite({
 		},
 		'should receive all updates made in the transaction in order'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			let count = 0;
 			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
@@ -822,6 +888,7 @@ registerSuite({
 	'subcollections': {
 		'should retrieve source collection\'s data with queries'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data
 			});
@@ -829,21 +896,22 @@ registerSuite({
 				.filter(store.createFilter().lessThan('value', 3))
 				.sort('value', true)
 				.fetch().then(dfd.callback(function(fetchedData: ItemType[]) {
-					assert.deepEqual(fetchedData, [data[1], data[0]]);
+					assert.deepEqual(fetchedData, [ data[1], data[0] ]);
 				}));
 		},
 
 		'should delegate to source collection'() {
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			const subCollection = store.filter(store.createFilter().lessThan('value', 3));
+			const data = createData();
 			const spies = [
 				sinon.spy(store, 'put'),
 				sinon.spy(store, 'add'),
 				sinon.spy(store, 'delete'),
 				sinon.spy(store, 'patch')
 			];
-			subCollection.put(data[0]);
-			subCollection.add(data[0]);
+			subCollection.put(duplicate(data[0]));
+			subCollection.add(duplicate(data[0]));
 			subCollection.patch(patches[0]);
 			subCollection.delete(data[0].id);
 
@@ -852,9 +920,11 @@ registerSuite({
 
 		'should be notified of changes in parent collection'(this: any) {
 			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			const calls: Array<() => any> = [
-				() => store.put(...updates[0]),
+				() => store.put(...updates[0].map(item => duplicate(item))),
 				() => store.patch(patches),
 				() => store.delete(data[0].id)
 			];
@@ -867,6 +937,102 @@ registerSuite({
 				} else {
 					dfd.resolve();
 				}
+			});
+		}
+	},
+
+	'tracking': {
+		'when tracking, subcollection updates should have index information'(this: any) {
+			const dfd = this.async(1000);
+			const data = createData();
+			const source = new MemoryStore({
+				data: [ duplicate(data[0]), duplicate(data[2]) ]
+			});
+			let deleteReceived = false;
+			let addReceived = false;
+			let patchReceived = false;
+			source
+				.sort(createSort<ItemType>('value'))
+				.track().then(function(subcollection: Store<ItemType>) {
+					subcollection.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+						try {
+							if (update.type === 'delete') {
+								deleteReceived = true;
+								assert.equal((<ItemsDeleted<ItemType>> update).updates[0].index, 2,
+									'Should have index for deleted item');
+							} else if (update.type === 'add') {
+								addReceived = true;
+								assert.equal((<BatchUpdate<ItemType>> update).updates[0].index, 1,
+									'Should have inserted item in correct order');
+							} else if (update.type === 'patch') {
+								patchReceived = true;
+								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+								assert.equal(itemUpdate.index, 2, 'Should have new index of item');
+								assert.equal(itemUpdate.previousIndex, 1, 'Should list previous index of item');
+							} else if (update.type === 'update') {
+								assert.isTrue(deleteReceived, 'Didn\'t receive delete update');
+								assert.isTrue(addReceived, 'Should have received add update');
+								assert.isTrue(patchReceived, 'Should have received patch update');
+								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+								assert.equal(itemUpdate.index, 1, 'Should have new index of item');
+								dfd.resolve();
+							}
+						} catch (e) {
+							dfd.reject(e);
+						}
+					});
+					source.add(data[1]);
+					source.patch(patches[1]);
+					source.delete(data[1].id);
+					source.put(createData()[1]);
+				});
+		}
+	},
+
+	'release': {
+		'release stores should maintain queries and use them when providing update indices'(this: any) {
+			const dfd = this.async(1000);
+			const data = createData();
+			const source = new MemoryStore({
+				data: [ duplicate(data[0]), duplicate(data[2]) ]
+			});
+			let deleteReceived = false;
+			let addReceived = false;
+			let patchReceived = false;
+			source
+				.sort(createSort<ItemType>('value'))
+				.release().then(function(subcollection: Store<ItemType>) {
+					subcollection.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+						try {
+							if (update.type === 'delete') {
+								deleteReceived = true;
+								assert.equal((<ItemsDeleted<ItemType>> update).updates[0].index, 2,
+									'Should have index for deleted item');
+							} else if (update.type === 'add') {
+								addReceived = true;
+								assert.equal((<BatchUpdate<ItemType>> update).updates[0].index, 1,
+									'Should have inserted item in correct order');
+							} else if (update.type === 'patch') {
+								patchReceived = true;
+								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+								assert.equal(itemUpdate.index, 2, 'Should have new index of item');
+								assert.equal(itemUpdate.previousIndex, 1, 'Should list previous index of item');
+							} else if (update.type === 'update') {
+								assert.isTrue(deleteReceived, 'Didn\'t receive delete update');
+								assert.isTrue(addReceived, 'Should have received add update');
+								assert.isTrue(patchReceived, 'Should have received patch update');
+								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+								assert.equal(itemUpdate.index, 1, 'Should have new index of item');
+								dfd.resolve();
+							}
+						} catch (e) {
+							dfd.reject(e);
+						}
+					});
+					subcollection.add(data[1]);
+					subcollection.patch(patches[1]);
+					subcollection.delete(data[1].id);
+					subcollection.put(createData()[1]);
 			});
 		}
 	}

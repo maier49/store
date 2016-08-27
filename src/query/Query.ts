@@ -23,11 +23,13 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 	constructor(query: Query<T, U>, queryStringBuilder?: (query: CompoundQuery<any, any>) => string) {
 		this.finalQuery = query;
 		this.queries = [];
-		this.queryStringBuilder = queryStringBuilder || (query => [ ...query.queries, query.finalQuery ].join('&'));
+		this.queryStringBuilder = queryStringBuilder || function(query) {
+				return [ ...query.queries, query.finalQuery ].join('&');
+			};
 	}
 
 	apply(data: T[]): U[] {
-		return this.finalQuery.apply(this.queries.reduce((prev, next) => {
+		return this.finalQuery.apply(this.queries.reduce(function(prev, next) {
 			return next.apply(prev);
 		}, data));
 	}
@@ -48,7 +50,9 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 
 	get queryTypes() {
 		const queryTypes = new Set<QueryType>();
-		[ ...this.queries, this.finalQuery ].forEach((query: Query<any, any>) => queryTypes.add(query.queryType));
+		[ ...this.queries, this.finalQuery ].forEach(function(query: Query<any, any>) {
+			return queryTypes.add(query.queryType);
+		});
 		return queryTypes;
 	}
 }

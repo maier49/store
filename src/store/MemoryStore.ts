@@ -28,11 +28,15 @@ export default class MemoryStore<T> extends BaseStore<T> {
 
 	getIds(...items: T[]): string[] {
 		if (this.idProperty) {
-			return items.map(item => (<any> item)[this.idProperty]);
+			return items.map((item) => {
+				return (<any> item)[this.idProperty];
+			});
 		} else if (this.idFunction) {
 			return items.map(this.idFunction);
 		} else {
-			return items.map(item => (<any> item).id);
+			return items.map(function(item) {
+				return (<any> item).id;
+			});
 		}
 	}
 
@@ -66,31 +70,43 @@ export default class MemoryStore<T> extends BaseStore<T> {
 		});
 
 		const filteredIds = this.getIds(...filteredItems);
-		const oldItems =  filteredIds.map(id => self.map.get(id).item);
-		const oldIndices = filteredIds.map(id => self.map.get(id).index);
+		const oldItems =  filteredIds.map(function(id) {
+			return self.map.get(id).item;
+		});
+		const oldIndices = filteredIds.map(function(id) {
+			return self.map.get(id).index;
+		});
 		if (self.source && self.sourceQuery && self.sourceQuery.queryTypes.has(QueryType.Range)) {
 			dataPromise = self.source.fetch(self.sourceQuery).then(function(data: T[]) {
 				self.data = data;
 			});
 		} else {
 			dataPromise = Promise.resolve();
-			filteredItems.forEach((item, index) => self.data[oldIndices[index]] = item);
+			filteredItems.forEach(function(item, index) {
+				return self.data[oldIndices[index]] = item;
+			});
 			self.data = self.sourceQuery ? self.sourceQuery.apply(self.data) : self.data;
 		}
 
-		return dataPromise.then(() => self.buildMap(self.data)).then(function(map) {
+		return dataPromise.then(function() {
+			return self.buildMap(self.data);
+		}).then(function(map) {
 			self.map = map;
 			const newIndices = filteredIds.map(id => self.map.get(id).index);
 			const update: ItemsUpdated<T> = {
 				type: 'update',
-				updates: newIndices.map((newIndex, index) => (<ItemUpdated<T>> {
-					type: 'update',
-					index: newIndex,
-					previousIndex: oldIndices[index],
-					item: filteredItems[index],
-					diff: () => diff(oldItems[index], filteredItems[index]),
-					id: filteredIds[index]
-				}))
+				updates: newIndices.map(function(newIndex, index) {
+					return (<ItemUpdated<T>> {
+						type: 'update',
+						index: newIndex,
+						previousIndex: oldIndices[index],
+						item: filteredItems[index],
+						diff() {
+							return diff(oldItems[index], filteredItems[index]);
+						},
+						id: filteredIds[index]
+					});
+				})
 			};
 
 			return <StoreUpdateResultData<T, T>> {
@@ -132,11 +148,13 @@ export default class MemoryStore<T> extends BaseStore<T> {
 			const newIndices = filteredIds.map(id => self.map.get(id).index);
 			const update: ItemsAdded<T> = {
 				type: 'add',
-				updates: newIndices.map((newIndex, index) => (<ItemUpdated<T>> {
-					index: newIndex,
-					item: filteredItems[index],
-					id: filteredIds[index]
-				}))
+				updates: newIndices.map(function(newIndex, index) {
+					return (<ItemUpdated<T>> {
+						index: newIndex,
+						item: filteredItems[index],
+						id: filteredIds[index]
+					});
+				})
 			};
 
 			return <StoreUpdateResultData<T, T>> {
@@ -153,7 +171,7 @@ export default class MemoryStore<T> extends BaseStore<T> {
 		let failedData: string[] = [];
 		let filteredIds: string[] = [];
 		const indices: number[] = [];
-		ids.forEach(id => {
+		ids.forEach(function(id) {
 			if (self.map.has(id)) {
 				const index = self.map.get(id).index;
 				successfulUpdates.push({
@@ -178,16 +196,20 @@ export default class MemoryStore<T> extends BaseStore<T> {
 			});
 		}
 
-		return dataPromise.then(() => self.buildMap(self.data)).then(function(map) {
+		return dataPromise.then(function() {
+			return self.buildMap(self.data);
+		}).then(function(map) {
 			self.map = map;
 
 			const update = <ItemsDeleted<T>> {
 				type: 'delete',
-				updates: successfulUpdates.map(({ index, id }: { index: number; id: string; }) => (<ItemDeleted> {
-					type: 'delete',
-					id: id,
-					index: index
-				}))
+				updates: successfulUpdates.map(function({ index, id }: { index: number; id: string; }) {
+					return (<ItemDeleted> {
+						type: 'delete',
+						id: id,
+						index: index
+					});
+				})
 			};
 			return <StoreUpdateResultData<T, string>> {
 				successfulData: update,
@@ -210,30 +232,46 @@ export default class MemoryStore<T> extends BaseStore<T> {
 			return result;
 		});
 
-		const oldIndices = filteredUpdates.map(update => self.map.get(update.id).index);
+		const oldIndices = filteredUpdates.map(function(update) {
+			return self.map.get(update.id).index;
+		});
 		if (self.source && self.sourceQuery && self.sourceQuery.queryTypes.has(QueryType.Range)) {
 			dataPromise = self.source.fetch(self.sourceQuery).then(function(data: T[]) {
 				self.data = data;
 			});
 		} else {
 			dataPromise = Promise.resolve();
-			filteredUpdates.forEach((update, index) => update.patch.apply(self.data[oldIndices[index]]));
+			// If there is a source, the data has already been patched so we only need to sort it
+			if (!self.source) {
+				filteredUpdates.forEach(function(update, index) {
+					return update.patch.apply(self.data[oldIndices[index]]);
+				});
+			}
 			self.data = self.sourceQuery ? self.sourceQuery.apply(self.data) : self.data;
 		}
 
-		return dataPromise.then(() => self.buildMap(self.data)).then(function(map) {
+		return dataPromise.then(function() {
+			return self.buildMap(self.data);
+		}).then(function(map) {
 			self.map = map;
-			const newIndices = filteredUpdates.map(update => self.map.get(update.id).index);
+			const newIndices = filteredUpdates.map(function(update)  {
+				return self.map.get(update.id).index;
+			});
 			const update: ItemsUpdated<T> = {
-				type: 'update',
-				updates: newIndices.map((newIndex, index) => (<ItemUpdated<T>> {
-					type: 'update',
-					index: newIndex,
-					previousIndex: oldIndices[index],
-					item: self.data[newIndex],
-					diff: () => filteredUpdates[index].patch,
-					id: filteredUpdates[index].id
-				}))
+				type: 'patch',
+				updates: newIndices.map(function(newIndex, index) {
+					return (<ItemUpdated<T>> {
+						type: 'patch',
+						index: newIndex,
+						previousIndex: oldIndices[index],
+						item: self.data[newIndex],
+						diff: function() {
+							return filteredUpdates[index].patch;
+
+						},
+						id: filteredUpdates[index].id
+					});
+				})
 			};
 
 			return {

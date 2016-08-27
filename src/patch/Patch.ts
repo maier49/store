@@ -3,8 +3,8 @@ import Operation, { OperationType, createOperation } from './Operation';
 import JsonPointer, { createPointer } from './JsonPointer';
 interface Patch<T, U> {
 	operations: Operation[];
-	apply: (target: T) => U;
-	toString: () => String;
+	apply(target: T): U;
+	toString(): String;
 }
 
 export default Patch;
@@ -18,7 +18,7 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	const toKeys = Object.keys(to);
 	const operations: Operation[] = [];
 
-	fromKeys.forEach((key) => {
+	fromKeys.forEach(function(key) {
 		if (!isEqual(from[key], to[key])) {
 			if (typeof from[key] !== 'undefined' && typeof to[key] === 'undefined') {
 				operations.push(createOperation(OperationType.Remove, startingPath.push(key)));
@@ -30,7 +30,7 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 		}
 	});
 
-	toKeys.forEach((key) => {
+	toKeys.forEach(function(key) {
 		if (typeof from[key] === 'undefined' && typeof to[key] !== 'undefined') {
 			operations.push(createOperation(OperationType.Add, startingPath.push(key), to[key]));
 		}

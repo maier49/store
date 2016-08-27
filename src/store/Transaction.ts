@@ -23,27 +23,37 @@ export class SimpleTransaction<T> implements Transaction<T> {
 	}
 
 	put(...items: T[]) {
-		this.actions.push(() => this.store.put(...items));
+		this.actions.push(() => {
+			return this.store.put(...items);
+		});
 		return this;
 	}
 
 	patch(updates: Map<string, Patch<T, T>>) {
-		this.actions.push(() => this.store.patch(updates));
+		this.actions.push(() => {
+			return this.store.patch(updates);
+		});
 		return this;
 	}
 
 	add(...items: T[]) {
-		this.actions.push(() => this.store.add(...items));
+		this.actions.push(() => {
+			return this.store.add(...items);
+		});
 		return this;
 	}
 
 	delete(...ids: string[]) {
-		this.actions.push(() => this.store.delete(...ids));
+		this.actions.push(() => {
+			return this.store.delete(...ids);
+		});
 		return this;
 	}
 
 	commit() {
-		return Observable.merge(...this.actions.map(action => action()));
+		return Observable.merge(...this.actions.map(function(action) {
+			return action();
+		}));
 	}
 
 	abort() {
