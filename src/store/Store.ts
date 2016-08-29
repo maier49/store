@@ -204,20 +204,17 @@ export abstract class BaseStore<T> implements Store<T> {
 	}
 
 	track(this: BaseStore<T>): Promise<BaseStore<T>> {
-		const self = this;
 		if (this.source) {
 			if (this.sourceSubscription) {
 				this.sourceSubscription.unsubscribe();
 			}
-			this.sourceSubscription = this.source.observe().subscribe(function(update: MultiUpdate<T>) {
-				self.propagateUpdate(update);
+			this.sourceSubscription = this.source.observe().subscribe((update: MultiUpdate<T>) => {
+				this.propagateUpdate(update);
 			});
 		}
 
 		this.isLive = true;
-		return this.fetch().then(function() {
-			return self;
-		});
+		return this.fetch().then(() => this);
 	}
 
 	transaction(): Transaction<T> {
@@ -504,15 +501,14 @@ export abstract class BaseStore<T> implements Store<T> {
 
 	public observe(): Observable<MultiUpdate<T>>;
 	public observe(idOrIds: string | string[]): Observable<Update<T>>;
-	public observe(idOrIds?: string | string[]): Observable<MultiUpdate<T>> | Observable<Update<T>> {
+	public observe(this: BaseStore<T>, idOrIds?: string | string[]): Observable<MultiUpdate<T>> | Observable<Update<T>> {
 		if (idOrIds) {
 			const ids: string[] = Array.isArray(idOrIds) ? <string[]> idOrIds : [<string> idOrIds];
-			const self = <BaseStore<T>> this;
-			return new Observable<Update<T>>(function subscribe(observer: Observer<Update<T>>) {
+			return new Observable<Update<T>>((observer: Observer<Update<T>>) => {
 				const idSet = new Set<string>(ids);
-				self.get(...ids).then(function(items: T[]) {
-					const retrievedIdSet = new Set<string>(self.getIds(...items));
-					let missingItemIds = ids.filter(id => !retrievedIdSet.has(id));
+				this.get(...ids).then((items: T[]) => {
+					const retrievedIdSet = new Set<string>(this.getIds(...items));
+					let missingItemIds = ids.filter(function(id) { return !retrievedIdSet.has(id); });
 					if (retrievedIdSet.size !== idSet.size || missingItemIds.length) {
 						observer.error(new Error(`ID(s) "${missingItemIds}" not found in store`));
 					} else {
@@ -521,17 +517,19 @@ export abstract class BaseStore<T> implements Store<T> {
 							observer: observer
 						};
 						(<string[]> ids).forEach(id => {
-							if (self.itemObservers.has(id)) {
-								self.itemObservers.get(id).push(observerEntry);
+							if (this.itemObservers.has(id)) {
+								this.itemObservers.get(id).push(observerEntry);
 							} else {
-								self.itemObservers.set(id, [observerEntry]);
+								this.itemObservers.set(id, [observerEntry]);
 							}
 						});
-						items.forEach((item, index) => observer.next(<ItemAdded<T>> {
-							type: 'add',
-							item: item,
-							id: ids[index]
-						}));
+						items.forEach(function(item, index) {
+							observer.next(<ItemAdded<T>> {
+								type: 'add',
+								item: item,
+								id: ids[index]
+							});
+						});
 					}
 				});
 			});

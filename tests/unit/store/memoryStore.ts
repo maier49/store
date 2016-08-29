@@ -46,7 +46,7 @@ function createUpdates(): ItemType[][] {
 	return [
 		createData().map(function ({ id, value, nestedProperty: { value: nestedValue } }) {
 			return {
-				id: id,
+				id,
 				value: value + 1,
 				nestedProperty: {
 					value: nestedValue
@@ -55,7 +55,7 @@ function createUpdates(): ItemType[][] {
 		}),
 		createData().map(function ({ id, value, nestedProperty: { value: nestedValue } }) {
 			return {
-				id: id,
+				id,
 				value: value + 1,
 				nestedProperty: {
 					value: nestedValue + 1
@@ -67,9 +67,9 @@ function createUpdates(): ItemType[][] {
 const patches: { id: string; patch: Patch<ItemType, ItemType> }[] =
 	createData().map(function ({ id, value, nestedProperty: { value: nestedValue } }, index) {
 		return {
-			id: id,
+			id,
 			patch: diff<ItemType, ItemType>(createData()[index], {
-				id: id,
+				id,
 				value: value + 2,
 				nestedProperty: {
 					value: nestedValue + 2
@@ -97,14 +97,14 @@ registerSuite({
 	'basic operations': {
 		'add': {
 			'should add new items'(this: any) {
-				const dfd = this.async(1000);
+				const dfd = this.async(1000, 2);
 				const data = createData();
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				// Add items
 				store.add(data[0], data[1]);
 				store.add(data[2]);
 				let count = 0;
-				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 					count++;
 					try {
 						assert.deepEqual(update.type, 'add', 'Should emit an add event');
@@ -118,10 +118,17 @@ registerSuite({
 					} catch (e) {
 						dfd.reject(e);
 					}
-					if (count === 2) {
-						dfd.resolve();
-					}
-				});
+				}));
+			},
+
+			'TODO: add empty item'(this: any) {
+				const dfd = this.async(1000, 0);
+				const store: Store<ItemType> = new MemoryStore<ItemType>();
+				store.add(...[]);
+				store.add();
+				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
+					dfd.reject({message: 'Operations should have been ignored.'});
+				}));
 			},
 
 			'add action with existing items should report conflicts, and allow overwriting with retry'(this: any) {
@@ -165,14 +172,14 @@ registerSuite({
 		},
 		'put': {
 			'should add new items'(this: any) {
-				const dfd = this.async(1000);
+				const dfd = this.async(1000, 2);
 				const data = createData();
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				// Add items with put
 				store.put(data[0], data[1]);
 				store.put(data[2]);
 				let count = 0;
-				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 					count++;
 					try {
 						assert.deepEqual(update.type, 'update', 'Should emit an update event');
@@ -186,15 +193,11 @@ registerSuite({
 					} catch (e) {
 						dfd.reject(e);
 					}
-					if (count === 2) {
-						subscription.unsubscribe();
-						dfd.resolve();
-					}
-				});
+				}));
 			},
 
 			'should update existing items'(this: any) {
-				const dfd = this.async(1000);
+				const dfd = this.async(1000, 2);
 				const data = createData();
 				const updates = createUpdates();
 				const store: Store<ItemType> = new MemoryStore({
@@ -204,7 +207,7 @@ registerSuite({
 				store.put(updates[0][0], updates[0][1]);
 				store.put(updates[0][2]);
 				let count = -1;
-				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 					count++;
 					if (count === 0) {
 						// First update will just contain the initial data
@@ -222,11 +225,7 @@ registerSuite({
 					} catch (e) {
 						dfd.reject(e);
 					}
-					if (count === 2) {
-						subscription.unsubscribe();
-						dfd.resolve();
-					}
-				});
+				}));
 			},
 
 			'should provide a diff from the old data to the new data'(this: any) {
@@ -247,9 +246,15 @@ registerSuite({
 					}
 					const copy = createData();
 					const patches: Patch<ItemType, ItemType>[] =
-						(<ItemsUpdated<ItemType>> update).updates.map(update => update.diff());
-					copy.forEach((item, index) => patches[index].apply(item));
-					assert.deepEqual(copy, (<ItemsUpdated<ItemType>> update).updates.map(update => update.item), 'Didn\'t return correct diffs');
+						(<ItemsUpdated<ItemType>> update).updates.map(function(update) {
+							return update.diff();
+						});
+					copy.forEach(function(item, index) {
+						patches[index].apply(item);
+					});
+					assert.deepEqual(copy, (<ItemsUpdated<ItemType>> update).updates.map(function(update) {
+						return update.item;
+					}), 'Didn\'t return correct diffs');
 				}));
 
 			}
@@ -276,8 +281,8 @@ registerSuite({
 				});
 				const copy = createData();
 				store.patch(patches).subscribe(dfd.callback(function(storeActionResult: StoreActionResult<ItemType>) {
-					assert.deepEqual(storeActionResult.successfulData.updates.map(update => update.item),
-						patches.map((patchObj, i) => patchObj.patch.apply(copy[i])), 'Should have patched all items');
+					assert.deepEqual(storeActionResult.successfulData.updates.map(function(update) { return update.item; }),
+						patches.map(function(patchObj, i) { return patchObj.patch.apply(copy[i]); }), 'Should have patched all items');
 				}));
 			},
 
@@ -289,12 +294,14 @@ registerSuite({
 				});
 
 				const map = new Map<string, Patch<ItemType, ItemType>>();
-				patches.forEach(patch => map.set(patch.id, patch.patch));
+				patches.forEach(function({id, patch}) {
+					map.set(id, patch);
+				});
 
 				const copy = createData();
 				store.patch(<Map<string, Patch<ItemType, ItemType>>> map).subscribe(dfd.callback(function(storeActionResult: StoreActionResult<ItemType>) {
-					assert.deepEqual(storeActionResult.successfulData.updates.map(update => update.item),
-						patches.map((patchObj, i) => patchObj.patch.apply(copy[i])), 'Should have patched all items');
+					assert.deepEqual(storeActionResult.successfulData.updates.map(function(update) { return update.item; }),
+						patches.map(function(patchObj, i) { return patchObj.patch.apply(copy[i]); }), 'Should have patched all items');
 				}));
 			}
 		}
@@ -361,7 +368,7 @@ registerSuite({
 					assert.deepEqual(fetchedData, [ data[1], data[2] ], 'Data fetched with range was incorrect');
 				}));
 		},
-		'should allow fetch with range on a range filtered store'(this: any) {
+		'should allow fetch with range on a ranged store'(this: any) {
 			const dfd = this.async(1000);
 			const data = createData();
 			const store: Store<ItemType> = new MemoryStore({
@@ -409,7 +416,7 @@ registerSuite({
 			store.add(...data);
 		},
 
-		'should receive an update when initial items are stored'(this: any) {
+		'should receive an update when subscribed before initial items are stored'(this: any) {
 			const dfd = this.async(1000);
 			const data = createData();
 			const store: Store<ItemType> = new MemoryStore<ItemType>({
@@ -422,15 +429,40 @@ registerSuite({
 			}));
 		},
 
-		'should be able to observe a single item'(this: any) {
+		'should not receive an update when subscribed after initial items were stored'(this: any) {
 			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore<ItemType>({
+				data: createData()
+			});
+			store.fetch().then(function(data: ItemType[]) {
+				try {
+					assert.isTrue(data.length > 0, 'initial items should have been stored.');
+				} catch (e) {
+					dfd.reject(e);
+				}
+
+				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+					try {
+						assert.strictEqual(update.type, 'update', 'Should only receive updates made after subscription');
+						dfd.resolve();
+					} catch (e) {
+						dfd.reject(e);
+					}
+				});
+
+				store.put(createUpdates()[0][2]);
+			});
+		},
+
+		'should be able to observe a single item'(this: any) {
+			const dfd = this.async(1000, 5);
 			const data = createData();
 			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore({
 				data: data.map(item => duplicate(item))
 			});
 			let updateCount = -1;
-			store.observe(data[0].id).subscribe(function(update: Update<ItemType>) {
+			store.observe(data[0].id).subscribe(dfd.callback(function(update: Update<ItemType>) {
 				try {
 					if (updateCount < 0) {
 						assert.strictEqual(update.type, 'add');
@@ -458,13 +490,10 @@ registerSuite({
 						}
 					}
 					updateCount++;
-					if (updateCount === 4) {
-						dfd.resolve();
-					}
 				} catch (e) {
 					dfd.reject(e);
 				}
-			});
+			}));
 
 			store.put(updates[0][0]);
 			store.put(updates[1][0]);
@@ -571,7 +600,7 @@ registerSuite({
 			store.delete(data[2].id);
 		},
 
-		'should not allow observing on non-existing ids'(this: any) {
+		'should not allow observing on non-existing ids in the store'(this: any) {
 			const dfd = this.async(1000);
 			const idNotExist = '4';
 			const data = createData();
@@ -937,6 +966,40 @@ registerSuite({
 				} else {
 					dfd.resolve();
 				}
+			});
+		},
+
+		'should not be notified of changes unrelated to the subcollection'(this: any) {
+			const dfd = this.async(1000);
+			const data = createData();
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+			const subCollection = store.filter(store.createFilter().greaterThan('id', 2));
+
+			subCollection.observe().subscribe(function(update: Update<ItemType>) {
+				try {
+					assert.equal(update.type, 'add');
+					assert.equal(update.item.id, '2', 'should only receive updates to filtered items');
+					dfd.resolve();
+				} catch (e) {
+					dfd.reject(e);
+				}
+			});
+			store.add(data[0]);
+			store.add(data[1]);
+			store.add(data[2]);
+		},
+
+		'should not allow observing on unrelated ids to the subcollection'(this: any) {
+			const dfd = this.async(1000);
+			const store: Store<ItemType> = new MemoryStore({
+				data: createData()
+			});
+			const subCollection = store.filter(store.createFilter().lessThan('id', 3));
+
+			subCollection.observe('3').subscribe(function success() {
+				dfd.reject(new Error('Should not call success callback.'));
+			}, function error() {
+				dfd.resolve();
 			});
 		}
 	},
