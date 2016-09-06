@@ -121,13 +121,14 @@ registerSuite({
 				}));
 			},
 
-			'TODO: add empty item'(this: any) {
-				const dfd = this.async(1000, 0);
+			'should not allow adding empty items'(this: any) {
+				const dfd = this.async(1000, 2);
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				store.add(...[]);
 				store.add();
 				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
-					dfd.reject({message: 'Operations should have been ignored.'});
+					assert.deepEqual(update.type, 'add', 'Should emit an add event');
+					assert.equal((<ItemsAdded<ItemType>> update).updates.length, 0, 'Should not have added empty item');
 				}));
 			},
 
@@ -600,7 +601,7 @@ registerSuite({
 			store.delete(data[2].id);
 		},
 
-		'should not allow observing on non-existing ids in the store'(this: any) {
+		'should receive a completed observable when observing on non-existing ids in the store'(this: any) {
 			const dfd = this.async(1000);
 			const idNotExist = '4';
 			const data = createData();
@@ -610,23 +611,10 @@ registerSuite({
 			store.observe(idNotExist).subscribe(function success() {
 				dfd.reject(new Error('Should not call success callback.'));
 			}, function error() {
+				dfd.reject(new Error('Should not call error callback.'));
+			}, function complete() {
 				dfd.resolve();
 			});
-		},
-
-		'should include non-existing ids in the error message'(this: any) {
-			const dfd = this.async(1000);
-			const idNonExisting = '4';
-			const idExisting = '2';
-			const data = createData();
-			const store: Store<ItemType> = new MemoryStore({
-				data: data
-			});
-			store.observe([idExisting, idNonExisting]).subscribe(function success() {},
-			dfd.callback(function(error: Error) {
-				assert.isTrue(error.message.indexOf(idExisting) === -1, `${idExisting} should not be included in the error message`);
-				assert.isTrue(error.message.indexOf(idNonExisting) !== -1, `${idNonExisting} should be included in the error message`);
-			}));
 		}
 	},
 
@@ -966,40 +954,6 @@ registerSuite({
 				} else {
 					dfd.resolve();
 				}
-			});
-		},
-
-		'should not be notified of changes unrelated to the subcollection'(this: any) {
-			const dfd = this.async(1000);
-			const data = createData();
-			const store: Store<ItemType> = new MemoryStore<ItemType>();
-			const subCollection = store.filter(store.createFilter().greaterThan('id', 2));
-
-			subCollection.observe().subscribe(function(update: Update<ItemType>) {
-				try {
-					assert.equal(update.type, 'add');
-					assert.equal(update.item.id, '2', 'should only receive updates to filtered items');
-					dfd.resolve();
-				} catch (e) {
-					dfd.reject(e);
-				}
-			});
-			store.add(data[0]);
-			store.add(data[1]);
-			store.add(data[2]);
-		},
-
-		'should not allow observing on unrelated ids to the subcollection'(this: any) {
-			const dfd = this.async(1000);
-			const store: Store<ItemType> = new MemoryStore({
-				data: createData()
-			});
-			const subCollection = store.filter(store.createFilter().lessThan('id', 3));
-
-			subCollection.observe('3').subscribe(function success() {
-				dfd.reject(new Error('Should not call success callback.'));
-			}, function error() {
-				dfd.resolve();
 			});
 		}
 	},
