@@ -1,6 +1,6 @@
 import JsonPointer, { navigate, createPointer } from '../patch/JsonPointer';
 import { isEqual } from '../utils';
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 
 export type FilterFunction<T> = (data: T[]) => T[];
 export type ObjectPointer = JsonPointer | string;
@@ -101,7 +101,8 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 			let newFilters: FilterChainMember<T>[] = [];
 			if (newFilter) {
 				newFilters.push(this, BooleanOp.And, newFilter);
-			} else if (filters.length) {
+			}
+			else if (filters.length) {
 				newFilters.push(...filters, BooleanOp.And);
 			}
 			return createFilterHelper(newFilters, serializer);
@@ -110,7 +111,8 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 			let newFilters: FilterChainMember<T>[] = [];
 			if (newFilter) {
 				newFilters.push(this, BooleanOp.Or, newFilter);
-			} else if (filters.length) {
+			}
+			else if (filters.length) {
 				newFilters.push(...filters, BooleanOp.Or);
 			}
 			return createFilterHelper(newFilters, serializer);
@@ -151,7 +153,8 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 		custom(test: (item: T) => boolean) {
 			return comparatorFilterHelper(FilterType.Custom, test);
 		},
-		queryType: QueryType.Filter
+		queryType: QueryType.Filter,
+		incremental: true
 	};
 
 	return filter;
@@ -181,7 +184,8 @@ function applyFilterChain<T>(item: T, filterChain: FilterChainMember<T>[]): bool
 		return filterChain.every(function(filterOrAnd: FilterChainMember<T>) {
 			if (isFilter(filterOrAnd)) {
 				return filterOrAnd.test(item);
-			} else {
+			}
+			else {
 				return true;
 			}
 		});
@@ -255,7 +259,8 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			test = function(propertyOrItem) {
 				if (Array.isArray(propertyOrItem)) {
 					return propertyOrItem.indexOf(value) > -1;
-				} else {
+				}
+				else {
 					return propertyOrItem && Boolean(propertyOrItem[value]);
 				}
 			};
@@ -311,15 +316,18 @@ function serializeFilter(filter: Filter<any>): string {
 				const start = next.filterChain ? '(' : '';
 				const end = next.filterChain ? ')' : '';
 				return prev + (prev ? operator : '') + (prev ? start : '') + next.toString() + (prev ? end : '');
-			} else if (next === BooleanOp.And) {
+			}
+			else if (next === BooleanOp.And) {
 				operator = '&';
 				return prev;
-			} else {
+			}
+			else {
 				operator = '|';
 				return prev;
 			}
 		}, '');
-	} else {
+	}
+	else {
 		return filter.toString();
 	}
 }

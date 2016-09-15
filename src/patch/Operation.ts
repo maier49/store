@@ -31,9 +31,11 @@ function navigatePath(target: any, path: JsonPointer) {
 			currentPath += `/${segment}`;
 			if (typeof target === 'undefined') {
 				throw new Error(`Invalid path: ${currentPath} doesn't exist in target`);
-			} else if (index + 1 < pathSegments.length) {
+			}
+			else if (index + 1 < pathSegments.length) {
 				target = target[segment];
-			} else {
+			}
+			else {
 				lastSegment = segment;
 			}
 		}
@@ -121,7 +123,8 @@ export interface Test extends Operation {
 function getPath(path: JsonPointer | string[]) {
 	if (Array.isArray(path)) {
 		return createPointer(...path);
-	} else {
+	}
+	else {
 		return path;
 	}
 }

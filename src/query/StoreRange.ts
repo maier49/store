@@ -1,4 +1,4 @@
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 interface StoreRange<T> extends Query<T, T> {
 	readonly start: number;
 	readonly count: number;
@@ -16,7 +16,8 @@ export function createRange<T>(start: number, count: number, serializer?: (range
 			return (rangeSerializer || serializer || serializeRange)(this);
 		},
 		start: start,
-		count: count
+		count: count,
+		incremental: false
 	};
 }
 

@@ -1,4 +1,4 @@
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 import JsonPointer, { navigate, createPointer } from '../patch/JsonPointer';
 
 export interface Sort<T> extends Query<T, T> {
@@ -16,11 +16,13 @@ export function createSort<T>(
 
 	if (isFunction) {
 		comparator = <any> comparatorOrProperty;
-	} else {
+	}
+	else {
 		let pointer: JsonPointer;
 		if (typeof comparatorOrProperty === 'string') {
 			pointer = createPointer(comparatorOrProperty);
-		} else {
+		}
+		else {
 			pointer = <JsonPointer> comparatorOrProperty;
 		}
 		comparator = function(a: T, b: T) {
@@ -43,7 +45,8 @@ export function createSort<T>(
 				throw Error('Cannot parse this sort type to an RQL query string');
 			}
 			return (sortSerializer || serializer || serialize)(this);
-		}
+		},
+		incremental: true
 	};
 }
 
@@ -60,15 +63,20 @@ function sortValue(a: any, b: any) {
 	let comparison: number;
 	if (a == null && b == null) {
 		comparison = 0;
-	} else if (a == null && b != null) {
+	}
+	else if (a == null && b != null) {
 		comparison = -1;
-	} else if (b == null && a != null) {
+	}
+	else if (b == null && a != null) {
 		comparison = 1;
-	} else if (a < b) {
+	}
+	else if (a < b) {
 		comparison = -1;
-	} else if (a > b) {
+	}
+	else if (a > b) {
 		comparison = 1;
-	} else {
+	}
+	else {
 		comparison = 0;
 	}
 	return comparison;

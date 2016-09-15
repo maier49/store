@@ -1,4 +1,4 @@
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 import JsonPointer, { createPointer, navigate } from '../patch/JsonPointer';
 import { shouldRecurseInto } from '../utils';
 
@@ -17,7 +17,8 @@ function buildOperations(obj: any, key?: JsonPointer): Array<(to: any, from: any
 		return Object.keys(value).reduce(function(prev, next) {
 			return [...prev, ...buildOperations(value, key.push(next))];
 		}, []);
-	} else {
+	}
+	else {
 		return [ function(to: any, from: any) {
 			navigate(key.pop(), to)[key.segments().pop()] = navigate(key, from);
 			return to;
@@ -35,7 +36,8 @@ export function createSelect<T extends U, U>(properties: U, serializer?: (select
 		},
 		apply(data: T[]) {
 			return data.map(item => <U> performSelection.reduce((prev, next) => next(prev, item), {}));
-		}
+		},
+		incremental: true
 	};
 }
 
