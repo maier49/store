@@ -11,23 +11,20 @@ export const enum StoreActionType {
 	Compound
 }
 
-export interface StoreUpdateResultData<T, U extends StoreActionDatum<T>> {
-	currentItems?: T[];
-	failedData?: StoreActionData<T, U>;
-	successfulData: BatchUpdate<T>;
-}
-
 export type FilteredData<T, U extends StoreActionDatum<T>> = {
 	currentItems?: T[];
 	failedData?: StoreActionData<T, U>;
 	data: StoreActionData<T, U>
 }
 
-export type StoreUpdateDataFunction<T, U extends StoreActionDatum<T>> = (data: StoreActionData<T, U>) => Promise<StoreUpdateResultData<T, U>>;
+export type StoreUpdateDataFunction<T, U extends StoreActionDatum<T>> = (data: StoreActionData<T, U>, options?: {}) => Promise<BatchUpdate<T>>;
 
-export interface StoreUpdateResult<T, U extends StoreActionDatum<T>> extends StoreUpdateResultData<T, U> {
+export interface StoreUpdateResult<T, U extends StoreActionDatum<T>> {
 	retry(failedData: StoreActionData<T, U>): Promise<StoreUpdateResult<T, U>>;
 	store: Store<T>;
+	currentItems?: T[];
+	failedData?: StoreActionData<T, U>;
+	successfulData: BatchUpdate<T>;
 }
 
 export type StoreUpdateFunction<T, U extends StoreActionDatum<T>> = () => Promise<StoreUpdateResult<T, U>>
@@ -45,16 +42,15 @@ export interface StoreAction<T> {
 
 export interface StoreActionResult<T> {
 	readonly retried: boolean;
-	action: StoreAction<T>;
-	withConflicts: boolean;
-	retryAll(): void;
+	withConflicts?: boolean;
+	retryAll?: () => void;
 	type: StoreActionType;
-	filter(shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean): void;
+	filter?: (shouldRetry: (data: StoreActionDatum<T>, currentItem?: T) => boolean) => void;
 	store: Store<T>;
-	successfulData: BatchUpdate<T>;
+	successfulData?: BatchUpdate<T>;
 }
 
-export function createPutAction<T>(
+export function createPutAction<T, U extends {}>(
 	fn: StoreUpdateFunction<T, T>,
 	targetItems: StoreActionData<T, T>,
 	store: Store<T>,
@@ -101,6 +97,7 @@ function createAction<T, U extends StoreActionDatum<T>>(
 	let lastResult: StoreActionResult<T>;
 	let observers: Observer<StoreActionResult<T>>[] = [];
 	let remove: number[] = [];
+	let completedResult: BatchUpdate<T>;
 	const observable = new Observable<StoreActionResult<T>>(function(observer: Observer<StoreActionResult<T>>) {
 		if (lastResult) {
 			observer.next(lastResult);
@@ -131,45 +128,72 @@ function createAction<T, U extends StoreActionDatum<T>>(
 				throw new Error('Action can only be retried synchronously within the "next" callback of the observer');
 			}
 		}
-		lastResult = {
-			retried: false,
-			action: action,
-			type: type,
-			withConflicts: Boolean(result.failedData.length),
-			retryAll(this: { retried: boolean }): void {
-				throwIfRetryIsForbidden();
-				if (this.retried) {
-					return;
-				}
-				this.retried = true;
-				if (failedData.length) {
-					isRetrying = true;
-					result.retry(failedData).then(updateResultToActionResult.bind(null, action));
-				}
-			},
-			filter(this: { retried: boolean }, shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean): void {
-				throwIfRetryIsForbidden();
-				if (this.retried) {
-					return;
-				}
-				this.retried = true;
-				const retryFor = failedData.filter(
-					(failedDatum, index) => shouldRetry(failedDatum, currentItems[index])
-				);
-				if (retryFor.length) {
-					isRetrying = true;
-					result.retry(retryFor).then(updateResultToActionResult.bind(null, action));
-				}
-			},
-			store: result.store,
-			successfulData: result.successfulData
-		};
+		if (result.successfulData && result.successfulData.updates.length) {
+			if (!completedResult) {
+				completedResult = result.successfulData;
+			} else {
+				completedResult.updates = result.successfulData.updates.concat(completedResult.updates);
+			}
+		}
+
+		if (result.failedData.length) {
+			lastResult = {
+				retried: false,
+				type: type,
+				withConflicts: true,
+				retryAll(this: { retried: boolean }): void {
+					throwIfRetryIsForbidden();
+					if (this.retried) {
+						return;
+					}
+					this.retried = true;
+					if (failedData.length) {
+						isRetrying = true;
+						result.retry(failedData).then(updateResultToActionResult.bind(null, action));
+					}
+				},
+				filter(this: { retried: boolean }, shouldRetry: (datum: StoreActionDatum<T>, currentItem?: T) => boolean): void {
+					throwIfRetryIsForbidden();
+					if (this.retried) {
+						return;
+					}
+					this.retried = true;
+					const retryFor = failedData.filter(
+						(failedDatum, index) => shouldRetry(failedDatum, currentItems[index])
+					);
+					if (retryFor.length) {
+						isRetrying = true;
+						result.retry(retryFor).then(updateResultToActionResult.bind(null, action));
+					}
+				},
+				store: result.store
+			};
+		} else {
+			lastResult = {
+				retried: false,
+				withConflicts: false,
+				type: type,
+				successfulData: completedResult,
+				store: result.store
+			};
+		}
 
 		inLoop = true;
 		observers.forEach(function(observer: Observer<StoreActionResult<T>>) {
 			observer.next(lastResult);
 		});
 		if (!lastResult.withConflicts || !isRetrying) {
+			if (lastResult.withConflicts) {
+				observers.forEach(function(observer: Observer<StoreActionResult<T>>) {
+					observer.next({
+						retried: false,
+						withConflicts: true,
+						type: type,
+						successfulData: completedResult,
+						store: result.store
+					});
+				});
+			}
 			observers.forEach(function(observer) {
 				observer.complete();
 			});

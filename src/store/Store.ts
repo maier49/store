@@ -14,7 +14,7 @@ import { Transaction, SimpleTransaction } from './Transaction';
 import StoreActionManager, { AsyncPassiveActionManager } from '../storeActions/StoreActionManager';
 import {
 	StoreActionResult, StoreUpdateFunction, StoreUpdateResult, createPutAction, createPatchAction, createAddAction,
-	createDeleteAction, StoreActionDatum, StoreActionData, StoreUpdateResultData, StoreUpdateDataFunction, FilteredData
+	createDeleteAction, StoreActionDatum, StoreActionData, StoreUpdateDataFunction, FilteredData
 } from '../storeActions/StoreAction';
 
 export type UpdateType = 'basic' | 'add' | 'update' | 'patch' | 'delete';
@@ -75,14 +75,32 @@ function isSort<T>(sortOrComparator: Sort<T> | ((a: T, b: T) => number) | string
 	return paramType !== 'function' && paramType !== 'string' && typeof (<Sort<T>> sortOrComparator).apply === 'function';
 }
 
+export interface StoreObservable<T> extends Observable<StoreActionResult<T>> {
+	then<U>(onFulfilled?: ((value?: BatchUpdate<T>) => (U | Promise<U> | null | undefined)) | null | undefined, onRejected?: (reason?: Error) => void): Promise<U>;
+}
+
+export function createStoreObservable<T>(observable: Observable<StoreActionResult<T>>): StoreObservable<T> {
+	(<any> observable).then = function(...args: any[]) {
+		return (<any> observable.toPromise().then(function(result) {
+			if (!result.successfulData) {
+				throw new Error('All data failed to update due to conflicts');
+			}
+
+			return result.successfulData;
+		}).then)(...args);
+	};
+
+	return <StoreObservable<T>> observable;
+}
+
 export interface Store<T> {
-	get(...ids: string[]): Promise<T[]>;
-	getIds(...items: T[]): string[];
+	get(ids: string[] | string): Promise<T[]>;
+	getIds(items: T[] | T): string[];
 	generateId(): Promise<string>;
-	add(...items: T[]): Observable<StoreActionResult<T>>;
-	put(...items: T[]): Observable<StoreActionResult<T>>;
-	patch(updates: Map<string, Patch<T, T>> | { id: string; patch: Patch<T, T> } | { id: string; patch: Patch<T, T> }[]): Observable<StoreActionResult<T>>;
-	delete(...ids: string[]): Observable<StoreActionResult<T>>;
+	add(items: T[] | T, options?: {}): StoreObservable<T>;
+	put(items: T[] | T, options?: {}): StoreObservable<T>;
+	patch(updates: Map<string, Patch<T, T>> | { id: string; patch: Patch<T, T> } | { id: string; patch: Patch<T, T> }[], options?: {}): StoreObservable<T>;
+	delete(ids: string[] | string): StoreObservable<T>;
 	observe(): Observable<MultiUpdate<T>>;
 	observe(ids: string | string[]): Observable<Update<T>>;
 	release(actionManager?: StoreActionManager<T>): Promise<Store<T>>;
@@ -158,7 +176,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		this.setupUpdateAspects();
 	}
 
-	abstract getIds(...items: T[]): string[];
+	abstract getIds(items: T[] | T): string[];
 
 	abstract generateId(): Promise<string>;
 
@@ -171,13 +189,13 @@ export abstract class BaseStore<T> implements Store<T> {
 
 	protected abstract _get(ids: string[]): Promise<T[]>;
 
-	protected abstract _put(items: T[]): Promise<StoreUpdateResultData<T, T>>;
+	protected abstract _put(items: T[], options?: {}): Promise<BatchUpdate<T>>;
 
-	protected abstract _add(items: T[]): Promise<StoreUpdateResultData<T, T>>
+	protected abstract _add(items: T[], options?: {}): Promise<BatchUpdate<T>>
 
-	protected abstract _delete(ids: string[]): Promise<StoreUpdateResultData<T, string>>;
+	protected abstract _delete(ids: string[]): Promise<BatchUpdate<T>>;
 
-	protected abstract _patch(updates: { id: string; patch: Patch<T, T> }[]): Promise<StoreUpdateResultData<T, { id: string; patch: Patch<T, T> }>>;
+	protected abstract _patch(updates: { id: string; patch: Patch<T, T> }[], options?: {}): Promise<BatchUpdate<T>>;
 
 	protected abstract isUpdate(item: T): Promise<{ isUpdate: boolean; item: T, id: string }>;
 
@@ -224,27 +242,27 @@ export abstract class BaseStore<T> implements Store<T> {
 		return new SimpleTransaction<T>(this);
 	}
 
-	get(...ids: string[]): Promise<T[]> {
+	get(ids: string[] | string): Promise<T[]> {
 		if (this.source) {
-			return this.source.get(...ids);
+			return this.source.get(ids);
 		} else {
 			return this.actionManager.queue((): Promise<T[]> => {
-				return this._get(ids);
+				return this._get(Array.isArray(ids) ? <string[]> ids : [<string> ids]);
 			});
 		}
 	}
 
-	put(...items: T[]): Observable<StoreActionResult<T>> {
+	put(items: T[] | T, options?: {}): StoreObservable<T> {
 		if (this.source) {
-			return this.source.put(...items);
+			return this.source.put(items, options);
 		} else {
-			return this.localPut(items);
+			return this.localPut(Array.isArray(items) ? <T[]> items : [ <T> items ], options);
 		}
 	}
 
-	protected localPut(items: T[]): Observable<StoreActionResult<T>> {
+	protected localPut(items: T[], options?: {}): StoreObservable<T> {
 		const self: BaseStore<T> = this;
-		const action = createPutAction(this.combinePutUpdateFunctions(items), items, self);
+		const action = createPutAction(this.combinePutUpdateFunctions(items, options), items, self);
 		if (this.source) {
 			// If this has a source the ordering of actions is controlled there so we just need to
 			// execute the update that has been propagated back down.
@@ -252,10 +270,10 @@ export abstract class BaseStore<T> implements Store<T> {
 		} else {
 			this.actionManager.queue(action);
 		}
-		return action.observable;
+		return createStoreObservable(action.observable);
 	}
 
-	protected combinePutUpdateFunctions(items: T[]): StoreUpdateFunction<T, T> {
+	protected combinePutUpdateFunctions(items: T[], options?: {}): StoreUpdateFunction<T, T> {
 		const self: BaseStore<T> = this;
 		const version = self.version;
 		return function() {
@@ -269,7 +287,10 @@ export abstract class BaseStore<T> implements Store<T> {
 							.filter(x => x.isUpdate)
 							.map(isUpdate => isUpdate.item);
 					}).then(function(updates: T[]) {
-						return self.createUpdateFunction<T>(self._put, updates, null, version);
+						return updates.length ?
+							self.createUpdateFunction<T>(self._put, updates, options, null, version) : () => Promise.resolve({
+								successfulData: {}
+						});
 					}),
 				updatesOrAdds
 					.then(function(addCandidates: { isUpdate: boolean; item: T; id: string }[]) {
@@ -277,19 +298,22 @@ export abstract class BaseStore<T> implements Store<T> {
 							.filter(x => !x.isUpdate)
 							.map(isUpdate => isUpdate.item);
 					}).then(function(adds: T[]) {
-						return self.createUpdateFunction(self._add, adds, null, version);
+						return adds.length ?
+							self.createUpdateFunction(self._add, adds, options, null, version) : () => Promise.resolve({
+								successfulData: {}
+						});
 					})
 			]).then(function([putUpdateFunction, addUpdateFunction]: StoreUpdateFunction<T, T>[]) {
-				return Promise.all([putUpdateFunction(), addUpdateFunction()])
+				return Promise.all([ putUpdateFunction(), addUpdateFunction() ])
 					.then(function([ putResults, addResults ]: StoreUpdateResult<T, T>[]) {
 						return {
 							currentItems: (putResults.currentItems || addResults.currentItems) ?
-								[...(putResults.currentItems || []), ...(addResults.currentItems || [])] : null,
+								[ ...(putResults.currentItems || []), ...(addResults.currentItems || [])] : null,
 							failedData: (putResults.failedData || addResults.failedData) ?
-								[...(putResults.failedData || []), ...(addResults.failedData || [])] : null,
+								[ ...(putResults.failedData || []), ...(addResults.failedData || [])] : null,
 							successfulData: <ItemsUpdated<T>> {
 								type: 'update',
-								updates: [...putResults.successfulData.updates, ...addResults.successfulData.updates]
+								updates: [ ...(putResults.successfulData.updates || []), ...(addResults.successfulData.updates || []) ]
 							},
 							store: self,
 							retry(failedData: T[]) {
@@ -301,9 +325,9 @@ export abstract class BaseStore<T> implements Store<T> {
 		};
 	}
 
-	patch(updates: { id: string; patch: Patch<T, T> } | Array<{ id: string; patch: Patch<T, T> }> | Map<string, Patch<T, T>>): Observable<StoreActionResult<T>> {
+	patch(updates: { id: string; patch: Patch<T, T> } | Array<{ id: string; patch: Patch<T, T> }> | Map<string, Patch<T, T>>, options?: {}): StoreObservable<T> {
 		if (this.source) {
-			return this.source.patch(updates);
+			return this.source.patch(updates, options);
 		} else {
 			let updateArray: Array<{ id: string; patch: Patch<T, T> }>;
 			if (updates instanceof Map) {
@@ -321,13 +345,13 @@ export abstract class BaseStore<T> implements Store<T> {
 			} else {
 				updateArray = [ <{ id: string, patch: Patch<T, T> }> updates];
 			}
-			return this.localPatch(updateArray);
+			return this.localPatch(updateArray, options);
 		}
 	}
 
-	protected localPatch(updates: { id: string; patch: Patch<T, T> }[]): Observable<StoreActionResult<T>> {
+	protected localPatch(updates: { id: string; patch: Patch<T, T> }[], options?: {}): StoreObservable<T> {
 		const self: BaseStore<T> = this;
-		const action = createPatchAction(self.createUpdateFunction(self._patch, updates), updates, self);
+		const action = createPatchAction(self.createUpdateFunction(self._patch, updates, options), updates, self);
 		if (this.source) {
 			// If this has a source the ordering of actions is controlled there so we just need to
 			// execute the update that has been propagated back down.
@@ -335,20 +359,20 @@ export abstract class BaseStore<T> implements Store<T> {
 		} else {
 			this.actionManager.queue(action);
 		}
-		return action.observable;
+		return createStoreObservable(action.observable);
 	}
 
-	add(...items: T[]): Observable<StoreActionResult<T>> {
+	add(items: T[] | T, options?: {}): StoreObservable<T> {
 		if (this.source) {
-			return this.source.add(...items);
+			return this.source.add(items);
 		} else {
-			return this.localAdd(items);
+			return this.localAdd(Array.isArray(items) ? <T[]> items : [ <T> items ], options);
 		}
 	}
 
-	protected localAdd(items: T[]): Observable<StoreActionResult<T>> {
+	protected localAdd(items: T[], options?: {}): StoreObservable<T> {
 		const self: BaseStore<T> = this;
-		const action = createAddAction(self.createUpdateFunction(self._add, items, self._put), items, self);
+		const action = createAddAction(self.createUpdateFunction(self._add, items, options, self._put, null, true), items, self);
 		if (this.source) {
 			// If this has a source the ordering of actions is controlled there so we just need to
 			// execute the update that has been propagated back down.
@@ -356,18 +380,18 @@ export abstract class BaseStore<T> implements Store<T> {
 		} else {
 			this.actionManager.queue(action);
 		}
-		return action.observable;
+		return createStoreObservable(action.observable);
 	}
 
-	delete(...ids: string[]): Observable<StoreActionResult<T>> {
+	delete(ids: string[] | string): StoreObservable<T> {
 		if (this.source) {
-			return this.source.delete(...ids);
+			return this.source.delete(ids);
 		} else {
-			return this.localDelete(ids);
+			return this.localDelete(Array.isArray(ids) ? <string[]> ids : [ <string> ids ]);
 		}
 	}
 
-	protected localDelete(ids: string[]): Observable<StoreActionResult<T>> {
+	protected localDelete(ids: string[]): StoreObservable<T> {
 		const self: BaseStore<T> = this;
 		const action = createDeleteAction(self.createUpdateFunction(self._delete, ids), ids, self);
 		if (this.source) {
@@ -377,7 +401,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		} else {
 			this.actionManager.queue(action);
 		}
-		return action.observable;
+		return createStoreObservable(action.observable);
 	}
 
 	fetch(): Promise<T[]>;
@@ -483,7 +507,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		const self = <BaseStore<T>> this;
 		const version = this.version;
 		const _map = map || <ItemMap<T>> new Map();
-		return Promise.resolve(this.getIds(...collection).reduce(function(_map, id, index) {
+		return Promise.resolve(this.getIds(collection).reduce(function(_map, id, index) {
 			if (_map.has(id) && !map) {
 				throw new Error('Collection contains item with duplicate ID');
 			}
@@ -510,8 +534,8 @@ export abstract class BaseStore<T> implements Store<T> {
 			const self = <BaseStore<T>> this;
 			return new Observable<Update<T>>(function subscribe(observer: Observer<Update<T>>) {
 				const idSet = new Set<string>(ids);
-				self.get(...ids).then(function(items: T[]) {
-					const retrievedIdSet = new Set<string>(self.getIds(...items));
+				self.get(ids).then(function(items: T[]) {
+					const retrievedIdSet = new Set<string>(self.getIds(items));
 					let missingItemIds = ids.filter(id => !retrievedIdSet.has(id));
 					if (retrievedIdSet.size !== idSet.size || missingItemIds.length) {
 						observer.error(new Error(`ID(s) "${missingItemIds}" not found in store`));
@@ -550,25 +574,27 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected sendUpdates(resultObservable: Observable<StoreActionResult<T>>): Observable<StoreActionResult<T>> {
 		const self = <BaseStore<T>> this;
 		resultObservable.subscribe(function(result) {
-			const update = result.successfulData;
-			self.observers.forEach((observer: Observer<MultiUpdate<T>>) => observer.next(update));
-			while (self.removeObservers.length) {
-				self.observers.splice(self.removeObservers.pop(), 1);
-			}
-			const ids = update.updates.map(function(update) {
-				return update.id;
-			});
-			ids.forEach(function(id, index) {
-				if (self.itemObservers.has(id)) {
-					self.itemObservers.get(id).forEach(observerEntry => observerEntry.observer.next(update.updates[index]));
+			if (result.successfulData) {
+				const update = result.successfulData;
+				self.observers.forEach((observer: Observer<MultiUpdate<T>>) => observer.next(update));
+				while (self.removeObservers.length) {
+					self.observers.splice(self.removeObservers.pop(), 1);
 				}
-			});
-			if (self.map) {
-				ids.forEach(function(id) {
-					if (self.map.has(id)) {
-						self.map.get(id).updatedVersion = self.version;
+				const ids = update.updates.map(function(update) {
+					return update.id;
+				});
+				ids.forEach(function(id, index) {
+					if (self.itemObservers.has(id)) {
+						self.itemObservers.get(id).forEach(observerEntry => observerEntry.observer.next(update.updates[index]));
 					}
 				});
+				if (self.map) {
+					ids.forEach(function(id) {
+						if (self.map.has(id)) {
+							self.map.get(id).updatedVersion = self.version;
+						}
+					});
+				}
 			}
 		});
 		return resultObservable;
@@ -577,25 +603,28 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected cancelItems(resultObservable: Observable<StoreActionResult<T>>): Observable<StoreActionResult<T>> {
 		const self: BaseStore<T> = this;
 		resultObservable.subscribe(function(result) {
-			self.observers.forEach(function(observer: Observer<MultiUpdate<T>>) {
-				return observer.next(result.successfulData);
-			});
-			while (self.removeObservers.length) {
-				self.observers.splice(self.removeObservers.pop(), 1);
-			}
-			result.successfulData.updates.forEach(function(update) {
-				const id = update.id;
-				if (self.itemObservers.has(id)) {
-					self.itemObservers.get(id).forEach(observerEntry => {
-						observerEntry.observes.delete(id);
-						observerEntry.observer.next(update);
-						if (!observerEntry.observes.size) {
-							observerEntry.observer.complete();
-						}
-					});
-					self.itemObservers.delete(id);
+			if (result.successfulData) {
+				const update = result.successfulData;
+				self.observers.forEach(function(observer: Observer<MultiUpdate<T>>) {
+					return observer.next(update);
+				});
+				while (self.removeObservers.length) {
+					self.observers.splice(self.removeObservers.pop(), 1);
 				}
-			});
+				update.updates.forEach(function(update) {
+					const id = update.id;
+					if (self.itemObservers.has(id)) {
+						self.itemObservers.get(id).forEach(observerEntry => {
+							observerEntry.observes.delete(id);
+							observerEntry.observer.next(update);
+							if (!observerEntry.observes.size) {
+								observerEntry.observer.complete();
+							}
+						});
+						self.itemObservers.delete(id);
+					}
+				});
+			}
 		});
 		return resultObservable;
 	}
@@ -603,31 +632,33 @@ export abstract class BaseStore<T> implements Store<T> {
 	protected createUpdateFunction<U extends StoreActionDatum<T>>(
 		updateFn: StoreUpdateDataFunction<T, U>,
 		data: StoreActionData<T, U>,
+		options?: {},
 		retryUpdateFn?: StoreUpdateDataFunction<T, U>,
-		targetedVersion?: number
+		targetedVersion?: number,
+		isAdd?: boolean,
 ): () => Promise<StoreUpdateResult<T, U>> {
 		const self = <BaseStore<T>> this;
 		if (typeof targetedVersion === 'undefined') {
 			targetedVersion = self.version;
 		}
 		return function(): Promise<StoreUpdateResult<T, U>> {
-			const prefilteredData: FilteredData<T, U> = self.failOnDirtyData ?
-				self.rejectDirtyData(data, targetedVersion) : { data: data };
-			return updateFn.call(self, prefilteredData.data).then(function(this: Store<T>, resultData: StoreUpdateResultData<T, U>) {
+			const prefilteredData: FilteredData<T, U> = (self.failOnDirtyData || isAdd) ?
+				self.rejectDirtyData(data, targetedVersion, isAdd) : { data: data };
+			return updateFn.call(self, prefilteredData.data, options).then(function(this: Store<T>, results: BatchUpdate<T>) {
 				self.version++;
-				resultData.successfulData.updates.forEach(function(update) {
+				results.updates.forEach(function(update) {
 					if (self.map.has(update.id)) {
 						self.map.get(update.id).updatedVersion = self.version;
 					}
 				});
 				return <StoreUpdateResult<T, U>> {
-					currentItems: [ ...(prefilteredData.currentItems || []), ...(resultData.currentItems || []) ],
-					failedData: [ ...(prefilteredData.failedData || []), ...(resultData.failedData || []) ],
-					successfulData: resultData.successfulData,
+					currentItems: prefilteredData.currentItems || [],
+					failedData: prefilteredData.failedData || [],
+					successfulData: results,
 					store: self,
 					retry(failedData: StoreActionData<T, U>) {
 						return self.actionManager.retry(
-							self.createUpdateFunction(retryUpdateFn || updateFn, failedData)
+							self.createUpdateFunction(retryUpdateFn || updateFn, failedData, options)
 						);
 					}
 				};
@@ -637,7 +668,8 @@ export abstract class BaseStore<T> implements Store<T> {
 
 	protected rejectDirtyData<U extends StoreActionDatum<T>> (
 		data: StoreActionData<T, U>,
-		targetedVersion: number): FilteredData<T, U> {
+		targetedVersion: number,
+		isAdd?: boolean): FilteredData<T, U> {
 		const self = <BaseStore<T>> this;
 		const ids: string[] = data.map(function(item: StoreActionDatum<T>) {
 			if (typeof item === 'string') {
@@ -650,7 +682,7 @@ export abstract class BaseStore<T> implements Store<T> {
 		});
 		let currentItems: T[] = [];
 		let newTargets: StoreActionData<T, U> = <StoreActionData<T, U>> data.filter(function(_, index) {
-			return (!self.map.has(ids[index])) || (self.map.get(ids[index]).updatedVersion <= targetedVersion);
+			return (!self.map.has(ids[index])) || (!isAdd && self.map.get(ids[index]).updatedVersion <= targetedVersion);
 		});
 		let outdatedData: StoreActionData<T, U> = <StoreActionData<T, U>> data.filter(function(_, index) {
 			const result = self.map.has(ids[index]) && self.map.get(ids[index]).updatedVersion > targetedVersion;

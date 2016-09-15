@@ -1,4 +1,4 @@
-import { StoreAction, StoreActionResult, StoreUpdateFunction, StoreUpdateResult, StoreActionDatum } from './StoreAction';
+import { StoreAction, StoreUpdateFunction, StoreUpdateResult, StoreActionDatum } from './StoreAction';
 import { after }  from 'dojo-core/aspect';
 import Promise from 'dojo-shim/Promise';
 
@@ -80,53 +80,6 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 	retry<U>(nonUpdateFunction: () => Promise<U>): Promise<U>;
 	retry<U extends StoreActionDatum<T>>(actionActionsOrUpdateFunction: StoreAction<T> | StoreUpdateFunction<T, U> | (() => Promise<U>)): void | Promise<StoreUpdateResult<T, U>> | Promise<U> {
 		return this.queue(<any> actionActionsOrUpdateFunction);
-	}
-}
-
-export class SyncAggressiveActionManager<T> extends BaseActionManager<T> {
-	private persistence: number;
-
-	constructor(persistence?: number) {
-		super();
-		this.persistence = typeof persistence === 'number' ? Math.min(100, Math.abs(persistence)) : 10;
-	}
-
-	actionManager(action: StoreAction<T>, completedCallback: () => void) {
-		let count = 1;
-		const subscription = action.observable.subscribe(
-			function(this: SyncAggressiveActionManager<T>, result: StoreActionResult<T>) {
-			if (result.withConflicts && count < this.persistence) {
-				count ++;
-				result.retryAll();
-			}
-		},
-		null,
-		function() {
-			subscription.unsubscribe();
-			completedCallback();
-		});
-	}
-}
-
-export class AsyncAgressiveActionManager<T> extends BaseActionManager<T> {
-	private persistence: number;
-
-	constructor(persistence?: number) {
-		super();
-		this.persistence = typeof persistence === 'number' ? Math.min(100, Math.abs(persistence)) : 10;
-	}
-
-	actionManager(action: StoreAction<T>, completedCallback: () => void) {
-		let count = 1;
-		const subscription = action.observable.subscribe(function(this: AsyncAgressiveActionManager<T>, result: StoreActionResult<T>) {
-			completedCallback();
-			if (!result.withConflicts || count > this.persistence) {
-				subscription.unsubscribe();
-			} else {
-				count ++;
-				result.retryAll();
-			}
-		});
 	}
 }
 

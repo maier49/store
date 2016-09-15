@@ -1,7 +1,9 @@
 import Query, { QueryType } from '../query/Query';
-import { BaseStore, BaseStoreOptions, ItemUpdated, ItemsUpdated, ItemsAdded, ItemsDeleted, ItemDeleted } from './Store';
+import {
+	BaseStore, BaseStoreOptions, ItemUpdated, ItemsUpdated, ItemsAdded, ItemsDeleted, ItemDeleted,
+	BatchUpdate
+} from './Store';
 import Promise from 'dojo-shim/Promise';
-import { StoreUpdateResultData } from '../storeActions/StoreAction';
 import { diff, default as Patch } from '../patch/Patch';
 
 export interface MemoryStoreOptions<T> extends BaseStoreOptions<T> {
@@ -20,21 +22,22 @@ export default class MemoryStore<T> extends BaseStore<T> {
 		super(options);
 		options = options || {};
 		if (options.data && options.data.length) {
-			this.add(...options.data);
+			this.add(options.data);
 		}
 		this.idProperty = options.idProperty;
 		this.idFunction = options.idFunction;
 	}
 
-	getIds(...items: T[]): string[] {
+	getIds(items: T[]| T): string[] {
+		const itemArray = Array.isArray(items) ? <T[]> items : [ <T> items ];
 		if (this.idProperty) {
-			return items.map((item) => {
+			return itemArray.map((item) => {
 				return (<any> item)[this.idProperty];
 			});
 		} else if (this.idFunction) {
-			return items.map(this.idFunction);
+			return itemArray.map(this.idFunction);
 		} else {
-			return items.map(function(item) {
+			return itemArray.map(function(item) {
 				return (<any> item).id;
 			});
 		}
@@ -54,22 +57,11 @@ export default class MemoryStore<T> extends BaseStore<T> {
 		return Promise.resolve(ids.map(id => self.map.has(id) ? self.map.get(id).item : null).filter(item => item));
 	}
 
-	protected _put(items: T[]): Promise<StoreUpdateResultData<T, T>> {
+	protected _put(items: T[], options?: {}): Promise<BatchUpdate<T>> {
 		const self = <MemoryStore<T>> this;
 		let dataPromise: Promise<void>;
-		const failedItems: T[] = [];
-		const currentItems: T[] = [];
-		const unFilteredIds = this.getIds(...items);
-		const filteredItems = items.filter(function(item, index) {
-			const result = self.map.has(unFilteredIds[index]);
-			if (!result) {
-				failedItems.push(item);
-				currentItems.push(null);
-			}
-			return result;
-		});
 
-		const filteredIds = this.getIds(...filteredItems);
+		const filteredIds = this.getIds(items);
 		const oldItems =  filteredIds.map(function(id) {
 			return self.map.get(id).item;
 		});
@@ -82,7 +74,7 @@ export default class MemoryStore<T> extends BaseStore<T> {
 			});
 		} else {
 			dataPromise = Promise.resolve();
-			filteredItems.forEach(function(item, index) {
+			items.forEach(function(item, index) {
 				return self.data[oldIndices[index]] = item;
 			});
 			self.data = self.sourceQuery ? self.sourceQuery.apply(self.data) : self.data;
@@ -100,39 +92,28 @@ export default class MemoryStore<T> extends BaseStore<T> {
 						type: 'update',
 						index: newIndex,
 						previousIndex: oldIndices[index],
-						item: filteredItems[index],
+						item: items[index],
 						diff() {
-							return diff(oldItems[index], filteredItems[index]);
+							return diff(oldItems[index], items[index]);
 						},
 						id: filteredIds[index]
 					});
 				})
 			};
 
-			return <StoreUpdateResultData<T, T>> {
-				successfulData: update,
-				failedData: failedItems.length ? failedItems : null,
-				currentItems: failedItems.length ? currentItems : null
-			};
+			return  update;
 		});
 	}
 
-	protected _add(items: T[]): Promise<StoreUpdateResultData<T, T>> {
+	protected _add(items: T[], options?: {}): Promise<BatchUpdate<T>> {
 		const self = <MemoryStore<T>> this;
 		let dataPromise: Promise<void>;
-		const failedItems: T[] = [];
-		const currentItems: T[] = [];
-		const unFilteredIds = this.getIds(...items);
+		const unFilteredIds = this.getIds(items);
 		const filteredItems = items.filter(function(item, index) {
-			const result = !self.map.has(unFilteredIds[index]);
-			if (!result) {
-				failedItems.push(item);
-				currentItems.push(self.map.get(unFilteredIds[index]).item);
-			}
-			return result;
+			return !self.map.has(unFilteredIds[index]);
 		});
 
-		const filteredIds = this.getIds(...filteredItems);
+		const filteredIds = this.getIds(filteredItems);
 		if (self.source && self.sourceQuery && self.sourceQuery.queryTypes.has(QueryType.Range)) {
 			dataPromise = self.source.fetch(self.sourceQuery).then(function(data: T[]) {
 				self.data = data;
@@ -157,18 +138,13 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				})
 			};
 
-			return <StoreUpdateResultData<T, T>> {
-				successfulData: update,
-				failedData: failedItems.length ? failedItems : null,
-				currentItems: failedItems.length ? currentItems : null
-			};
+			return update;
 		});
 	}
 
-	protected _delete(ids: string[]): Promise<StoreUpdateResultData<T, string>> {
+	protected _delete(ids: string[]): Promise<BatchUpdate<T>> {
 		const self = <MemoryStore<T>> this;
 		let successfulUpdates: { index: number, id: string }[] = [];
-		let failedData: string[] = [];
 		let filteredIds: string[] = [];
 		const indices: number[] = [];
 		ids.forEach(function(id) {
@@ -180,8 +156,6 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				});
 				indices.push(index);
 				filteredIds.push(id);
-			} else {
-				failedData.push(id);
 			}
 		});
 		let dataPromise: Promise<void>;
@@ -211,25 +185,15 @@ export default class MemoryStore<T> extends BaseStore<T> {
 					});
 				})
 			};
-			return <StoreUpdateResultData<T, string>> {
-				successfulData: update,
-				failedData: failedData
-			};
+			return update;
 		});
 	}
 
-	protected _patch(updates: { id: string; patch: Patch<T, T> }[]): Promise<StoreUpdateResultData<T, { id: string; patch: Patch<T, T> }>> {
+	protected _patch(updates: { id: string; patch: Patch<T, T> }[], options?: {}): Promise<BatchUpdate<T>> {
 		const self = <MemoryStore<T>> this;
 		let dataPromise: Promise<void>;
-		const failedItems: { id: string; patch: Patch<T, T> }[] = [];
-		const currentItems: T[] = [];
 		const filteredUpdates = updates.filter(function(update) {
-			const result = self.map.has(update.id);
-			if (!result) {
-				failedItems.push(update);
-				currentItems.push(null);
-			}
-			return result;
+			return self.map.has(update.id);
 		});
 
 		const oldIndices = filteredUpdates.map(function(update) {
@@ -274,11 +238,7 @@ export default class MemoryStore<T> extends BaseStore<T> {
 				})
 			};
 
-			return {
-				successfulData: update,
-				failedData: failedItems.length ? failedItems : null,
-				currentItems: failedItems.length ? currentItems : null
-			};
+			return update;
 		});
 	}
 

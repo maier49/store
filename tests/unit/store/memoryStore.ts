@@ -101,7 +101,7 @@ registerSuite({
 				const data = createData();
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				// Add items
-				store.add(data[0], data[1]);
+				store.add([ data[0], data[1] ]);
 				store.add(data[2]);
 				let count = 0;
 				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
@@ -137,7 +137,7 @@ registerSuite({
 					try {
 						if (first) {
 							assert.isTrue(result.withConflicts, 'Should have had conflicts for existing data');
-							assert.isTrue(result.successfulData.updates.length === 0, 'Should not have successful data in the result');
+							assert.notOk(result.successfulData, 'Should not have successful data in the result');
 							store.fetch().then(function(currentData: ItemType[]) {
 								try {
 									assert.deepEqual(currentData, data,
@@ -169,7 +169,7 @@ registerSuite({
 				const data = createData();
 				const store: Store<ItemType> = new MemoryStore<ItemType>();
 				// Add items with put
-				store.put(data[0], data[1]);
+				store.put([ data[0], data[1] ]);
 				store.put(data[2]);
 				let count = 0;
 				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
@@ -201,7 +201,7 @@ registerSuite({
 					data: data
 				});
 				// Add items with put
-				store.put(updates[0][0], updates[0][1]);
+				store.put([ updates[0][0], updates[0][1] ]);
 				store.put(updates[0][2]);
 				let count = -1;
 				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
@@ -236,7 +236,7 @@ registerSuite({
 				const store: Store<ItemType> = new MemoryStore({
 					data: data
 				});
-				store.put(...updates[0]);
+				store.put(updates[0]);
 
 				let ignoreFirst = true;
 				store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
@@ -296,6 +296,138 @@ registerSuite({
 					assert.deepEqual(storeActionResult.successfulData.updates.map(update => update.item),
 						patches.map((patchObj, i) => patchObj.patch.apply(copy[i])), 'Should have patched all items');
 				}));
+			}
+		},
+
+		'should be able to get all updates by treating as a promise': {
+			'add': {
+				'without conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore<ItemType>();
+					store.add(data).then(function(result) {
+						assert.deepEqual(result.updates.map(update => update.item), data,
+							'Should have returned all added items');
+					}).then(dfd.resolve);
+				},
+
+				'with conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: [ data[0], data[1] ]
+					});
+					store.add(data).then(function(result) {
+						assert.deepEqual(result.updates.map(update => update.item), [ data[2] ],
+							'Should have returned only items added without conflicts');
+					}).then(dfd.resolve);
+				},
+
+				'with resolved conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: [ data[0], data[1] ]
+					});
+					const operationObservable = store.add(data);
+					operationObservable.subscribe(function(result) {
+						if (result.withConflicts) {
+							result.retryAll();
+						}
+					});
+					operationObservable.then(function(result) {
+						assert.deepEqual(result.updates.map(update => update.item), data,
+							'Should have returned all items');
+					}).then(dfd.resolve);
+				},
+
+				'all updates failed due to conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: data
+					});
+					store.add(data).then(function() {
+						dfd.reject('Should have failed');
+					}, dfd.callback(function() {
+
+					}));
+				}
+			},
+			'put': {
+				'without conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: data
+					});
+					store.put(data).then(function(result) {
+						assert.deepEqual(result.updates.map(update => update.item), data,
+							'Should have returned all added items');
+					}).then(dfd.resolve);
+				},
+
+				'with conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: [ data[0], data[1] ],
+						failOnDirtyData: true
+					});
+					store.put(data).then(function(result) {
+						assert.deepEqual(result.updates.map(update => update.item), [ data[2] ],
+							'Should have returned all added items');
+					}).then(dfd.resolve);
+				},
+
+				'with resolved conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: [ data[0], data[1] ],
+						failOnDirtyData: true
+					});
+					const operationObservable = store.put(data);
+					operationObservable.subscribe(function(result) {
+						if (result.withConflicts) {
+							result.retryAll();
+						}
+					});
+					operationObservable.then(function(result) {
+						assert.deepEqual(result.updates.map(update => update.item), data,
+							'Should have returned all items');
+					}).then(dfd.resolve);
+				},
+
+				'all updates failed due to conflicts': function(this: any) {
+					const dfd = this.async(1000);
+					const data = createData();
+					const store: Store<ItemType> = new MemoryStore({
+						data: data,
+						failOnDirtyData: true
+					});
+					store.put(data).then(function() {
+						dfd.reject('Should have failed');
+					}, dfd.callback(function() {
+
+					}));
+				}
+			},
+			'patch': {
+				'without conflicts': function() {
+				},
+				'with conflicts': function() {
+				},
+				'with resolved conflicts': function() {
+				}
+			},
+			'delete': {
+				'without conflicts': function() {
+				},
+				'with conflicts': function() {
+				},
+				'with resolved conflicts': function() {
+				}
 			}
 		}
 	},
@@ -406,7 +538,7 @@ registerSuite({
 					'Should have received an update for all three items added');
 			}));
 
-			store.add(...data);
+			store.add(data);
 		},
 
 		'should receive an update when initial items are stored'(this: any) {
@@ -540,8 +672,8 @@ registerSuite({
 				}
 			});
 
-			store.put(...updates[0]);
-			store.delete(data[0].id, data[1].id);
+			store.put(updates[0]);
+			store.delete([ data[0].id, data[1].id ]);
 			store.delete(data[2].id);
 		},
 
@@ -565,8 +697,8 @@ registerSuite({
 				})
 			);
 
-			store.put(...updates[0]);
-			store.delete(data[0].id, data[1].id);
+			store.put(updates[0]);
+			store.delete([ data[0].id, data[1].id ]);
 			store.put(updates[0][2]);
 			store.delete(data[2].id);
 		},
@@ -693,8 +825,8 @@ registerSuite({
 			let firstTry = true;
 			const dfd = this.async(1000);
 			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
-				store.put(...updates[0]);
-				store.put(...updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
+				store.put(updates[0]);
+				store.put(updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
 					try {
 						if (firstTry) {
 							assert.isTrue(result.withConflicts);
@@ -726,8 +858,8 @@ registerSuite({
 			let firstTry = true;
 			const dfd = this.async(1000);
 			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
-				store.put(...updates[0]);
-				store.put(...updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
+				store.put(updates[0]);
+				store.put(updates[1]).subscribe(function(result: StoreActionResult<ItemType>) {
 					try {
 						if (firstTry) {
 							assert.isTrue(result.withConflicts);
@@ -779,7 +911,7 @@ registerSuite({
 				}
 			);
 
-			store.put(...updates[1]).subscribe(
+			store.put(updates[1]).subscribe(
 				function next(result) {
 					if (result.withConflicts) {
 						result.retryAll();
@@ -806,8 +938,8 @@ registerSuite({
 			const updates = createUpdates();
 
 			store.transaction()
-				.add(...data)
-				.put(...updates[0])
+				.add(data)
+				.put(updates[0])
 				.delete(data[0].id)
 				.commit()
 				.subscribe(
@@ -829,8 +961,8 @@ registerSuite({
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			let count = 0;
 			store.transaction()
-				.add(...data)
-				.put(...updates[0])
+				.add(data)
+				.put(updates[0])
 				.delete(data[0].id)
 				.commit()
 				.subscribe(dfd.callback(function(result: StoreActionResult<ItemType>) {
@@ -878,10 +1010,29 @@ registerSuite({
 			}));
 
 			store.transaction()
-				.add(...data)
-				.put(...updates[0])
+				.add(data)
+				.put(updates[0])
 				.delete(data[0].id)
 				.commit();
+		},
+
+		'should resolve as a promise when all parts of a transaction have completed': function(this: any) {
+			const dfd = this.async(1000);
+			const data = createData();
+			const updates = createUpdates();
+			const store: Store<ItemType> = new MemoryStore<ItemType>();
+
+			store.transaction()
+				.add(data)
+				.put(updates[0])
+				.delete(data[0].id)
+				.commit()
+				.then(function() {
+					store.fetch().then(function(data) {
+						assert.deepEqual(data, [ updates[0][1], updates[0][2] ],
+							'Transaction didn\'t properly resolve after all operations completed');
+					}).then(dfd.resolve);
+				});
 		}
 	},
 
@@ -924,7 +1075,7 @@ registerSuite({
 			const updates = createUpdates();
 			const store: Store<ItemType> = new MemoryStore<ItemType>();
 			const calls: Array<() => any> = [
-				() => store.put(...updates[0].map(item => duplicate(item))),
+				() => store.put(updates[0].map(item => duplicate(item))),
 				() => store.patch(patches),
 				() => store.delete(data[0].id)
 			];
@@ -1035,5 +1186,34 @@ registerSuite({
 					subcollection.put(createData()[1]);
 			});
 		}
+	},
+
+	'should generate unique ids': function() {
+		const ids: Promise<string>[] = [];
+		const store: Store<any> = new MemoryStore();
+		const generateNIds = 100000;
+		for (let i = 0; i < generateNIds; i++) {
+			ids.push(store.generateId());
+		}
+		Promise.all(ids).then(function(ids) {
+			assert.equal(new Set(ids).size, generateNIds, 'Not all generated IDs were unique');
+		});
+	},
+
+	'should allow a property or function to be specified as the id': function() {
+		const data = createData();
+		const updates = createUpdates();
+		const store: Store<ItemType> = new MemoryStore<ItemType>({
+			data: updates[0],
+			idProperty: 'value'
+		});
+		const idFunctionStore: Store<ItemType> = new MemoryStore<ItemType>({
+			idFunction: (item: ItemType) => item.id + '-id',
+			data: data
+		});
+
+		assert.deepEqual(store.getIds(updates[0]), [2, 3, 4], 'Should have used value property as the id');
+		assert.deepEqual(idFunctionStore.getIds(data), ['1-id', '2-id', '3-id'],
+			'Should have used id function to create item ids');
 	}
 });
