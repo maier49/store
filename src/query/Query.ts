@@ -1,6 +1,7 @@
 interface Query<T, U> {
 	apply(data: T[]): U[];
 	toString(querySerializer?: (query: Query<any, any>) => string): string;
+	incremental?: boolean;
 	queryType: QueryType;
 }
 
@@ -54,5 +55,11 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 			return queryTypes.add(query.queryType);
 		});
 		return queryTypes;
+	}
+
+	get incremental() {
+		return [ ...this.queries, this.finalQuery ].every(function(query: Query<any, any>) {
+			return query.incremental;
+		});
 	}
 }

@@ -1,42 +1,42 @@
-import { Store, createStoreObservable, StoreObservable } from './Store';
+import { Store, createStoreObservable, StoreObservable } from './createMemoryStore';
 import Patch from '../patch/Patch';
 import Map from 'dojo-shim/Map';
 import { Observable } from 'rxjs';
 import { StoreActionResult } from '../storeActions/StoreAction';
 
 // TODO - Update Transactions to work with store action manager and store actions
-export interface Transaction<T> {
-	abort(): Store<T>;
+export interface Transaction<T, O> {
+	abort(): Store<T, O>;
 	commit(): StoreObservable<T>;
-	add(items: T[] | T, options?: {}): Transaction<T>;
-	put(items: T[] | T, options?: {}): Transaction<T>;
-	patch(updates: Map<string, Patch<T, T>>, options?: {}): Transaction<T>;
-	delete(ids: string[] | string): Transaction<T>;
+	add(items: T[] | T, options?: O): Transaction<T, O>;
+	put(items: T[] | T, options?: O): Transaction<T, O>;
+	patch(updates: Map<string, Patch<T, T>>, options?: O): Transaction<T, O>;
+	delete(ids: string[] | string): Transaction<T, O>;
 }
 
-export class SimpleTransaction<T> implements Transaction<T> {
-	protected store: Store<T>;
+export class SimpleTransaction<T, O> implements Transaction<T, O> {
+	protected store: Store<T, O>;
 	protected actions: Array<() => Observable<StoreActionResult<T>>>;
-	constructor(store: Store<T>) {
+	constructor(store: Store<T, O>) {
 		this.actions = [];
 		this.store = store;
 	}
 
-	put(items: T[] | T, options?: {}) {
+	put(items: T[] | T, options?: O) {
 		this.actions.push(() => {
 			return this.store.put(items, options);
 		});
 		return this;
 	}
 
-	patch(updates: Map<string, Patch<T, T>>, options?: {}) {
+	patch(updates: Map<string, Patch<T, T>>, options?: O) {
 		this.actions.push(() => {
 			return this.store.patch(updates);
 		});
 		return this;
 	}
 
-	add(items: T[]| T, options?: {}) {
+	add(items: T[]| T, options?: O) {
 		this.actions.push(() => {
 			return this.store.add(items, options);
 		});

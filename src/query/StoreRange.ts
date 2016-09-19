@@ -16,7 +16,8 @@ export function createRange<T>(start: number, count: number, serializer?: (range
 			return (rangeSerializer || serializer || serializeRange)(this);
 		},
 		start: start,
-		count: count
+		count: count,
+		incremental: false
 	};
 }
 

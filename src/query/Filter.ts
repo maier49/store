@@ -151,7 +151,8 @@ function createFilterHelper<T>(filters: FilterChainMember<T>[], serializer?: (fi
 		custom(test: (item: T) => boolean) {
 			return comparatorFilterHelper(FilterType.Custom, test);
 		},
-		queryType: QueryType.Filter
+		queryType: QueryType.Filter,
+		incremental: true
 	};
 
 	return filter;

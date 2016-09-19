@@ -35,7 +35,8 @@ export function createSelect<T extends U, U>(properties: U, serializer?: (select
 		},
 		apply(data: T[]) {
 			return data.map(item => <U> performSelection.reduce((prev, next) => next(prev, item), {}));
-		}
+		},
+		incremental: true
 	};
 }
 

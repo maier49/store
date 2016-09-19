@@ -43,7 +43,8 @@ export function createSort<T>(
 				throw Error('Cannot parse this sort type to an RQL query string');
 			}
 			return (sortSerializer || serializer || serialize)(this);
-		}
+		},
+		incremental: true
 	};
 }
 

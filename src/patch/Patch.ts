@@ -9,6 +9,8 @@ interface Patch<T, U> {
 
 export default Patch;
 
+export type PatchMapEntry<T, U> = { id: string; patch: Patch<T, U> };
+
 function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	if (!shouldRecurseInto(from) || !shouldRecurseInto(to)) {
 		return [];
