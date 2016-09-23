@@ -5,9 +5,9 @@ import Promise from 'dojo-shim/Promise';
 import WeakMap from 'dojo-shim/WeakMap';
 import Set from 'dojo-shim/Set';
 import Map from 'dojo-shim/Map';
-import { after } from 'dojo-core/aspect';
 import compose, { ComposeFactory } from 'dojo-compose/compose';
 import { Observer, Observable, Subscription } from 'rxjs';
+import createStoreObservable, { StoreObservable } from './createStoreObservable';
 import { Sort, createSort } from '../query/Sort';
 import StoreRange, { createRange } from '../query/StoreRange';
 import { QueryType } from '../query/Query';
@@ -15,7 +15,7 @@ import { duplicate } from 'dojo-core/lang';
 import { Transaction, SimpleTransaction } from './Transaction';
 import StoreActionManager from '../storeActions/StoreActionManager';
 import {
-	StoreActionResult, StoreUpdateFunction, StoreUpdateResult, createPutAction, createPatchAction, createAddAction,
+	StoreUpdateFunction, StoreUpdateResult, createPutAction, createPatchAction, createAddAction,
 	createDeleteAction, StoreActionDatum, StoreActionData, StoreUpdateDataFunction, UpdateResults, StoreAction,
 	FilteredData
 } from '../storeActions/StoreAction';
@@ -87,24 +87,6 @@ function isSort<T>(sortOrComparator: Sort<T> | ((a: T, b: T) => number) | string
 	return paramType !== 'function' && paramType !== 'string' && typeof (<Sort<T>> sortOrComparator).apply === 'function';
 }
 
-export interface StoreObservable<T> extends Observable<StoreActionResult<T>> {
-	then<U>(onFulfilled?: ((value?: T[] | string[]) => (U | Promise<U> | null | undefined)) | null | undefined, onRejected?: (reason?: Error) => void): Promise<U>;
-}
-
-export function createStoreObservable<T>(observable: Observable<StoreActionResult<T>>): StoreObservable<T> {
-	(<any> observable).then = function(...args: any[]) {
-		return (<any> observable.toPromise().then(function(result) {
-			if (!result.successfulData) {
-				throw new Error('All data failed to update due to conflicts');
-			}
-
-			return result.successfulData;
-		}).then)(...args);
-	};
-
-	return <StoreObservable<T>> observable;
-}
-
 export interface Store<T, O> {
 	get(ids: string[] | string): Promise<T[]>;
 	getIds(items: T[] | T): string[];
@@ -115,8 +97,8 @@ export interface Store<T, O> {
 	delete(ids: string[] | string): StoreObservable<T>;
 	observe(): Observable<MultiUpdate<T>>;
 	observe(ids: string | string[]): Observable<Update<T>>;
-	release(actionManager?: StoreActionManager<T>): Promise<Store<T, O>>;
-	track(): Promise<Store<T, O>>;
+	release(actionManager?: StoreActionManager<T>): Store<T, O>;
+	track(): Store<T, O>;
 	fetch(): Promise<T[]>;
 	fetch<U>(query: Query<T, U>): Promise<U[]>;
 	query(query: Query<T, T>): Store<T, O>;
@@ -147,7 +129,7 @@ export interface StoreOptions<T, O> {
 	storage?: Storage<T, O>;
 	data?: T[];
 	sourceQuery?: Query<T, T>;
-	failOnDirtyData?: boolean;
+	mediateDataConflicts?: boolean;
 	idProperty?: string;
 	idFunction?: (item: T) => string;
 	actionManager?: StoreActionManager<T>;
@@ -164,7 +146,7 @@ export interface StorageFactory extends ComposeFactory<Storage<{}, {}>, StorageO
 }
 
 interface BaseStoreState<T, O> {
-	failOnDirtyData?: boolean;
+	mediateDataConflicts?: boolean;
 	source?: Store<T, O>;
 	storage?: Storage<T, O>;
 	sourceSubscription?: Subscription;
@@ -183,28 +165,30 @@ interface BaseStoreState<T, O> {
 
 const instanceStateMap = new WeakMap<Store<{}, {}>, BaseStoreState<{}, {}>>();
 
+function isPatchEntry(item: any): item is PatchMapEntry<any, any> {
+	return typeof item.id === 'string' && item.patch;
+}
 function rejectDirtyData<T, O, U extends StoreActionDatum<T>> (
 	instance: Store<T, O>,
 	instanceState: BaseStoreState<T, O>,
 	data: StoreActionData<T, U>,
-	targetedVersion: number,
-	isAdd?: boolean): FilteredData<T, U> {
+	targetedVersion: number): FilteredData<T, U> {
 	const ids: string[] = data.map(function(item: StoreActionDatum<T>) {
 		if (typeof item === 'string') {
-			return <string> item;
+			return item;
 		}
-		else if ((<any> item).id && (<any> item).patch && typeof (<any> item).id === 'string') {
-			return <string> (<any> item).id;
+		else if (isPatchEntry(item)) {
+			return item.id;
 		}
 		else {
-			return instance.getIds(<T> item)[0];
+			return instance.getIds(item)[0];
 		}
 	});
 	let currentItems: T[] = [];
-	let newTargets: StoreActionData<T, U> = <StoreActionData<T, U>> data.filter(function(_, index) {
-		return (!instanceState.map.has(ids[index])) || (!isAdd && instanceState.map.get(ids[index]).updatedVersion <= targetedVersion);
+	let newTargets: StoreActionData<T, U> = data.filter(function(_, index) {
+		return (!instanceState.map.has(ids[index])) || instanceState.map.get(ids[index]).updatedVersion <= targetedVersion;
 	});
-	let outdatedData: StoreActionData<T, U> = <StoreActionData<T, U>> data.filter(function(_, index) {
+	let outdatedData: StoreActionData<T, U> = data.filter(function(_, index) {
 		const result = instanceState.map.has(ids[index]) && instanceState.map.get(ids[index]).updatedVersion > targetedVersion;
 		if (result) {
 			currentItems.push(instanceState.map.get(ids[index]).item);
@@ -225,15 +209,13 @@ function createUpdateFunction<T, O, U extends StoreActionDatum<T>>(
 	data: StoreActionData<T, U>,
 	options?: O,
 	retryUpdateFn?: StoreUpdateDataFunction<T, U>,
-	targetedVersion?: number,
-	isAdd?: boolean,
-): () => Promise<StoreUpdateResult<T, U>> {
+	targetedVersion?: number): () => Promise<StoreUpdateResult<T, U>> {
 	if (typeof targetedVersion === 'undefined') {
 		targetedVersion = instanceState.version;
 	}
 	return function(): Promise<StoreUpdateResult<T, U>> {
-		const prefilteredData: FilteredData<T, U> = (instanceState.failOnDirtyData || isAdd) ?
-			rejectDirtyData(instance, instanceState, data, targetedVersion, isAdd) : { data: data };
+		const prefilteredData: FilteredData<T, U> = instanceState.mediateDataConflicts ?
+			rejectDirtyData(instance, instanceState, data, targetedVersion) : { data: data };
 		return updateFn.call(instanceState, prefilteredData.data, options).then(function(results: UpdateResults<T, U>) {
 			instanceState.version++;
 			return <StoreUpdateResult<T, U>> {
@@ -259,7 +241,7 @@ function getOptions<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T
 
 function buildMap<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>,  collection: T[], map?: ItemMap<T>): Promise<ItemMap<T>> {
 	const version = instanceState.version;
-	const _map = map || <ItemMap<T>> new Map();
+	const _map = map || new Map<string, { item: T; index: number; updatedVersion: number }>();
 	return Promise.resolve(instance.getIds(collection).reduce(function(_map, id, index) {
 		if (_map.has(id) && !map) {
 			throw new Error('Collection contains item with duplicate ID');
@@ -268,23 +250,34 @@ function buildMap<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, 
 			item: collection[index],
 			index: index,
 			updatedVersion: instanceState.map.has(id) ? instanceState.map.get(id).updatedVersion : version});
-		return <ItemMap<T>> _map;
+		return _map;
 	}, _map));
 }
 
-function sendUpdates<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, resultObservable: Observable<StoreActionResult<T>>) {
+function isStringArray<T> (data: T[] | string[]): data is string[] {
+	return typeof data[0] === 'string';
+}
+
+function sendUpdates<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, resultObservable: StoreObservable<T>) {
 	resultObservable.subscribe(function(result) {
 		if (result.successfulData) {
-			const ids = typeof result.successfulData[0] === 'string' ? <string[]> result.successfulData : null;
-			const items = typeof result.successfulData[0] !== 'string' ? <T[]> result.successfulData : null;
+			let ids: string[];
+			let items: T[];
+			if (isStringArray(result.successfulData)) {
+				ids = result.successfulData;
+			} else {
+				items = result.successfulData;
+			}
 			transformUpdates(instance, instanceState, result.type, items, ids).then(function(update: BatchUpdate<T>) {
 				instanceState.observers.forEach((observer: Observer<MultiUpdate<T>>) => observer.next(update));
 				while (instanceState.removeObservers.length) {
 					instanceState.observers.splice(instanceState.removeObservers.pop(), 1);
 				}
-				const ids = update.updates.map(function(update: Update<T>) {
-					return update.id;
-				});
+				if (!ids) {
+					ids = update.updates.map(function(update: Update<T>) {
+						return update.id;
+					});
+				}
 				ids.forEach(function(id, index) {
 					if (instanceState.itemObservers.has(id)) {
 						instanceState.itemObservers.get(id).forEach(observerEntry => observerEntry.observer.next(update.updates[index]));
@@ -335,23 +328,34 @@ function combinePutUpdateFunctions<T, O>(instance: Store<T, O>, instanceState: B
 		]).then(function([ putUpdateFunction, addUpdateFunction ]: StoreUpdateFunction<T, T>[]) {
 			return Promise.all([ putUpdateFunction(), addUpdateFunction() ])
 				.then(function([ putResults, addResults ]: StoreUpdateResult<T, T>[]) {
+					const currentItems = (putResults.currentItems || addResults.currentItems) ?
+							[ ...(putResults.currentItems || []), ...(addResults.currentItems || [])] : null;
+					const failedData = (putResults.failedData || addResults.failedData) ?
+							[ ...(putResults.failedData || []), ...(addResults.failedData || [])] : null;
+					const putResultsData: string[] | T[] = putResults.successfulData || [];
+					const addResultsData: string[] | T[] = addResults.successfulData || [];
+					let successfulData: string[] | T[] = [];
+
+					if (isStringArray(addResultsData) && isStringArray(putResultsData)) {
+						successfulData = [ ...putResultsData, ...addResultsData];
+					} else if (!isStringArray(addResultsData) && !isStringArray(putResultsData)) {
+						successfulData = [ ...putResultsData, ...addResultsData];
+					}
 					return {
-						currentItems: (putResults.currentItems || addResults.currentItems) ?
-							[ ...(putResults.currentItems || []), ...(addResults.currentItems || [])] : null,
-						failedData: (putResults.failedData || addResults.failedData) ?
-							[ ...(putResults.failedData || []), ...(addResults.failedData || [])] : null,
-						successfulData: <string[] | T[]> [ ...putResults.successfulData, ...addResults.successfulData],
+						currentItems: currentItems,
+						failedData: failedData,
+						successfulData: successfulData,
 						store: instance,
-						retry(failedData: T[]) {
+						retry: failedData ? function(failedData: T[]) {
 							return combinePutUpdateFunctions(instance, instanceState, failedData)();
-						}
+						} : null
 					};
 				});
 		});
 	};
 }
 
-function cancelItems<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, resultObservable: Observable<StoreActionResult<T>>) {
+function cancelItems<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, resultObservable: StoreObservable<T>) {
 	resultObservable.subscribe(function(result) {
 		if (result.successfulData) {
 			const ids = typeof result.successfulData[0] === 'string' ? <string[]> result.successfulData : null;
@@ -382,13 +386,6 @@ function cancelItems<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<
 	return resultObservable;
 }
 
-function setupUpdateAspects<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>) {
-	after(instance, 'localPut', sendUpdates.bind(null, instance, instanceState));
-	after(instance, 'localPatch', sendUpdates.bind(null, instance, instanceState));
-	after(instance, 'localAdd', sendUpdates.bind(null, instance, instanceState));
-	after(instance, 'localDelete', cancelItems.bind(null, instance, instanceState));
-}
-
 function queueActionAndCreateObservable<T, O>(instanceState: BaseStoreState<T, O>, action: StoreAction<T>) {
 	if (instanceState.source) {
 		// If this has a source the ordering of actions is controlled there so we just need to
@@ -410,7 +407,7 @@ function localPut<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, 
 	), items, function() {
 		return instanceState.version;
 	});
-	return queueActionAndCreateObservable(instanceState, action);
+	return sendUpdates(instance, instanceState, queueActionAndCreateObservable(instanceState, action));
 }
 
 function localPatch<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, updates: PatchMapEntry<T, T>[], options?: O): StoreObservable<T> {
@@ -423,7 +420,7 @@ function localPatch<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T
 	), updates, function() {
 		return instanceState.version;
 	});
-	return queueActionAndCreateObservable(instanceState, action);
+	return sendUpdates(instance, instanceState, queueActionAndCreateObservable(instanceState, action));
 }
 
 function localAdd<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, items: T[], options?: O): StoreObservable<T> {
@@ -434,12 +431,11 @@ function localAdd<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, 
 		items,
 		options,
 		instanceState.storage.put,
-		null,
-		true
+		null
 	), items, function() {
 		return instanceState.version;
 	});
-	return queueActionAndCreateObservable(instanceState, action);
+	return sendUpdates(instance, instanceState, queueActionAndCreateObservable(instanceState, action));
 }
 
 function localDelete<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<T, O>, ids: string[]): StoreObservable<T> {
@@ -452,7 +448,7 @@ function localDelete<T, O>(instance: Store<T, O>, instanceState: BaseStoreState<
 	const action = createDeleteAction(updateFunction, ids, function() {
 		return instanceState.version;
 	});
-	return queueActionAndCreateObservable(instanceState, action);
+	return cancelItems(instance, instanceState, queueActionAndCreateObservable(instanceState, action));
 }
 
 function createSubcollection<T, O>(instanceState: BaseStoreState<T, O>, options: StoreOptions<T, O>): Store<T, O> {
@@ -719,7 +715,7 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		}
 	},
 
-	release(this: Store<{}, {}>, actionManager?: StoreActionManager<{}>): Promise<Store<{}, {}>> {
+	release(this: Store<{}, {}>, actionManager?: StoreActionManager<{}>): Store<{}, {}> {
 		const self = this;
 		const state = instanceStateMap.get(self);
 		state.actionManager = state.actionManager || actionManager;
@@ -728,22 +724,19 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 				state.sourceSubscription.unsubscribe();
 				state.sourceSubscription = null;
 			}
-			return self.fetch().then(function(data: {}[]) {
+			self.fetch().then(function(data: {}[]) {
 				state.data = data.map(function(item) {
 					return duplicate(item);
 				});
 				state.storage = instanceStateMap.get(state.source).storage;
 				state.source = null;
 				state.isTracking = false;
-				return self;
 			});
 		}
-		else {
-			return Promise.resolve(self);
-		}
+		return self;
 	},
 
-	track(this: Store<{}, {}>): Promise<Store<{}, {}>> {
+	track(this: Store<{}, {}>): Store<{}, {}> {
 		const self = this;
 		const state = instanceStateMap.get(self);
 		if (state.source) {
@@ -755,17 +748,18 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 			});
 		}
 
-		return self.fetch().then(function() {
+		self.fetch().then(function() {
 			state.isTracking = true;
-			return self;
+
 		});
+		return self;
 	},
 
-	fetch<V>(this: Store<{}, {}>, query?: Query<{}, V>): Promise<V[]> | Promise<{}[]> {
+	fetch<V extends {}>(this: Store<{}, {}>, query?: Query<{}, V> | Query<{}, {}>): Promise<V[]> | Promise<{}[]> {
 		const self = this;
 		const state = instanceStateMap.get(this);
 		if (state.sourceQuery) {
-			query = query ? state.sourceQuery.withQuery(query) : <any> state.sourceQuery;
+			query = query ? state.sourceQuery.withQuery(query) : state.sourceQuery;
 		}
 		let dataPromise: Promise<{}[]>;
 		if (state.source) {
@@ -894,10 +888,11 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 
 	instanceState.StoreFactory = createMemoryStore;
 	instanceState.actionManager = options.actionManager || new AsyncPassiveActionManager<T>();
-	instanceState.failOnDirtyData = options.failOnDirtyData;
+	instanceState.mediateDataConflicts = options.mediateDataConflicts;
 	instanceStateMap.set(instance, instanceState);
-
-	setupUpdateAspects(instance, instanceState);
+	if (options.data) {
+		instance.add(options.data);
+	}
 });
 
 export default createMemoryStore;

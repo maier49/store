@@ -108,7 +108,7 @@ registerSuite({
 				store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
 					count++;
 					try {
-						assert.deepEqual(update.type, 'add', 'Should emit an add event');
+						assert.deepEqual(update.type, StoreOperation.Add, 'Should emit an add event');
 						if (count === 1) {
 							assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item),
 								[ data[0], data[1] ], 'Should have returned first two items after first update');
@@ -125,43 +125,30 @@ registerSuite({
 				});
 			},
 
-			'add action with existing items should report conflicts, and allow overwriting with retry'(this: any) {
+			'add action with existing items should fail'(this: any) {
 				const dfd = this.async(1000);
 				const data = createData();
 				const updates = createUpdates();
 				const store = createMemoryStore({
 					data: data
 				});
-				let first = true;
-				// Update items with add
-				store.add(updates[0][2]).subscribe(function handleResult(result: StoreActionResult<ItemType>) {
-					try {
-						if (first) {
-							assert.isTrue(result.withConflicts, 'Should have had conflicts for existing data');
-							assert.notOk(result.successfulData, 'Should not have successful data in the result');
-							store.fetch().then(function(currentData: ItemType[]) {
-								try {
-									assert.deepEqual(currentData, data,
-										'Should not have updated existing item after add');
-								} catch (e) {
-									dfd.reject(e);
-								}
-							});
-							result.retryAll();
-							first = false;
-						} else {
-							assert.isFalse(result.withConflicts, 'Should not have reported any conflicts after retry');
-							assert.isTrue(result.successfulData.length === 1);
-							assert.deepEqual(result.successfulData[0], updates[0][2], 'Should have updated item after retry');
-							store.fetch().then(dfd.callback(function(currentData: ItemType[]) {
-								assert.deepEqual(currentData, [ data[0], data[1], updates[0][2] ],
-									'Should have updated item after retry');
-							}));
-						}
-					} catch (e) {
-						dfd.reject(e);
-					}
+				store.add(updates[0][2]).then().catch(function (error: any) {
+					assert.equal(error.message, 'Objects already exist in store',
+						'Didn\'t reject with appropriate error message');
+				}).then(dfd.resolve);
+			},
+
+			'add action with rejectOverwrite: false in options should overwrite existing data': function(this: any) {
+				const dfd = this.async(1000);
+				const data = createData();
+				const updates = createUpdates();
+				const store = createMemoryStore({
+					data: data
 				});
+				// Update items with add
+				store.add(updates[0][2], { rejectOverwrite: false }).then(function(items) {
+					assert.deepEqual(items, [ updates[0][2] ], 'Didn\'t successfully return item');
+				}).then(dfd.resolve);
 			}
 		},
 		'put': {
@@ -176,7 +163,7 @@ registerSuite({
 				const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
 					count++;
 					try {
-						assert.deepEqual(update.type, 'update', 'Should emit an update event');
+						assert.deepEqual(update.type, StoreOperation.Put, 'Should emit an update event');
 						if (count === 1) {
 							assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item),
 								[ data[0], data[1] ], 'Should have returned first two items after first update');
@@ -212,7 +199,7 @@ registerSuite({
 						return;
 					}
 					try {
-						assert.deepEqual(update.type, 'update', 'Should emit an update event');
+						assert.deepEqual(update.type, StoreOperation.Put, 'Should emit an update event');
 						if (count === 1) {
 							assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item),
 								[ updates[0][0], updates[0][1] ], 'Should have returned first two items after first update');
@@ -315,8 +302,9 @@ registerSuite({
 					const dfd = this.async(1000);
 					const data = createData();
 					const store = createMemoryStore({
-						data: [ data[0], data[1] ]
-					});
+						data: [ data[0], data[1] ],
+						mediateDataConflicts: true
+					}).track();
 					store.add(data).then(function(result) {
 						assert.deepEqual(result, [ data[2] ], 'Should have returned only items added without conflicts');
 					}).then(dfd.resolve);
@@ -326,8 +314,9 @@ registerSuite({
 					const dfd = this.async(1000);
 					const data = createData();
 					const store = createMemoryStore({
-						data: [ data[0], data[1] ]
-					});
+						data: [ data[0], data[1] ],
+						mediateDataConflicts: true
+					}).track();
 					const operationObservable = store.add(data);
 					operationObservable.subscribe(function(result) {
 						if (result.withConflicts) {
@@ -343,8 +332,9 @@ registerSuite({
 					const dfd = this.async(1000);
 					const data = createData();
 					const store = createMemoryStore({
-						data: data
-					});
+						data: data,
+						mediateDataConflicts: true
+					}).track();
 					store.add(data).then(function() {
 						dfd.reject('Should have failed');
 					}, dfd.callback(function() {
@@ -369,8 +359,8 @@ registerSuite({
 					const data = createData();
 					const store = createMemoryStore({
 						data: [ data[0], data[1] ],
-						failOnDirtyData: true
-					});
+						mediateDataConflicts: true
+					}).track();
 					store.put(data).then(function(result) {
 						assert.deepEqual(result, [ data[2] ], 'Should have returned all added items');
 					}).then(dfd.resolve);
@@ -381,8 +371,8 @@ registerSuite({
 					const data = createData();
 					const store = createMemoryStore({
 						data: [ data[0], data[1] ],
-						failOnDirtyData: true
-					});
+						mediateDataConflicts: true
+					}).track();
 					const operationObservable = store.put(data);
 					operationObservable.subscribe(function(result) {
 						if (result.withConflicts) {
@@ -399,8 +389,8 @@ registerSuite({
 					const data = createData();
 					const store = createMemoryStore({
 						data: data,
-						failOnDirtyData: true
-					});
+						mediateDataConflicts: true
+					}).track();
 					store.put(data).then(function() {
 						dfd.reject('Should have failed');
 					}, dfd.callback(function() {
@@ -528,7 +518,7 @@ registerSuite({
 			const data = createData();
 			const store = createMemoryStore();
 			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
-				assert.strictEqual(update.type, 'add', 'Should have received a notification about updates');
+				assert.strictEqual(update.type, StoreOperation.Add, 'Should have received a notification about updates');
 				assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data,
 					'Should have received an update for all three items added');
 			}));
@@ -543,7 +533,7 @@ registerSuite({
 				data: data
 			});
 			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
-				assert.strictEqual(update.type, 'add', 'Should have received a notification about updates');
+				assert.strictEqual(update.type, StoreOperation.Add, 'Should have received a notification about updates');
 				assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data,
 					'Should have received an update for all three items added');
 			}));
@@ -560,15 +550,15 @@ registerSuite({
 			store.observe(data[0].id).subscribe(function(update: Update<ItemType>) {
 				try {
 					if (updateCount < 0) {
-						assert.strictEqual(update.type, 'add');
+						assert.strictEqual(update.type, StoreOperation.Add);
 						assert.deepEqual((<ItemAdded<ItemType>> update).item, data[0], 'Should receive an initial update with the item');
 					} else {
 						if (updateCount === 3) {
-							assert.strictEqual(update.type, 'delete');
+							assert.strictEqual(update.type, StoreOperation.Delete);
 						} else if (updateCount === 2) {
-							assert.strictEqual(update.type, 'patch');
+							assert.strictEqual(update.type, StoreOperation.Patch);
 						} else {
-							assert.strictEqual(update.type, 'update');
+							assert.strictEqual(update.type, StoreOperation.Put);
 						}
 						if (updateCount === 3) {
 							assert.strictEqual(update.id, data[0].id, 'Wrong ID received for delete notification');
@@ -786,7 +776,7 @@ registerSuite({
 			const updates = createUpdates();
 			const store = createMemoryStore({
 				data: data,
-				failOnDirtyData: true
+				mediateDataConflicts: true
 			});
 			const dfd = this.async(1000);
 			const subscription = store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
@@ -814,7 +804,7 @@ registerSuite({
 			const updates = createUpdates();
 			const store = createMemoryStore({
 				data: data,
-				failOnDirtyData: true
+				mediateDataConflicts: true
 			});
 			let firstTry = true;
 			const dfd = this.async(1000);
@@ -845,7 +835,7 @@ registerSuite({
 			const updates = createUpdates();
 			const store = createMemoryStore({
 				data: data,
-				failOnDirtyData: true
+				mediateDataConflicts: true
 			});
 			let firstTry = true;
 			const dfd = this.async(1000);
@@ -882,7 +872,7 @@ registerSuite({
 			const dfd = this.async(1000);
 			const updates = createUpdates();
 			const store = createMemoryStore({
-				failOnDirtyData: true
+				mediateDataConflicts: true
 			});
 
 			let successCount = 0;
@@ -985,13 +975,13 @@ registerSuite({
 			store.observe().subscribe(dfd.callback(function(update: MultiUpdate<ItemType>) {
 				try {
 					if (count === 0) {
-						assert.strictEqual(update.type, 'add', '1st update should be of type "add"');
+						assert.strictEqual(update.type, StoreOperation.Add, '1st update should be of type "add"');
 						assert.deepEqual((<ItemsAdded<ItemType>> update).updates.map(update => update.item), data);
 					} else if (count === 1) {
-						assert.strictEqual(update.type, 'update', '2nd update should be of type "update"');
+						assert.strictEqual(update.type, StoreOperation.Put, '2nd update should be of type "update"');
 						assert.deepEqual((<ItemsUpdated<ItemType>> update).updates.map(update => update.item), updates[0]);
 					} else if (count === 2) {
-						assert.strictEqual(update.type, 'delete', '3rd update should be of type "delete"');
+						assert.strictEqual(update.type, StoreOperation.Delete, '3rd update should be of type "delete"');
 						assert.deepEqual((<ItemsDeleted<ItemType>> update).updates.map(update => update.id), data[0].id);
 						dfd.resolve();
 					}
@@ -1091,44 +1081,43 @@ registerSuite({
 			const source =  createMemoryStore({
 				data: [ duplicate(data[0]), duplicate(data[2]) ]
 			});
+			const subcollection = source
+				.sort(createSort<ItemType>('value'))
+				.track();
 			let deleteReceived = false;
 			let addReceived = false;
 			let patchReceived = false;
-			source
-				.sort(createSort<ItemType>('value'))
-				.track().then(function(subcollection: Store<ItemType, any>) {
-					subcollection.observe().subscribe(function(update: MultiUpdate<ItemType>) {
-						try {
-							if (update.type === StoreOperation.Delete) {
-								deleteReceived = true;
-								assert.equal((<ItemsDeleted<ItemType>> update).updates[0].index, 2,
-									'Should have index for deleted item');
-							} else if (update.type === StoreOperation.Add) {
-								addReceived = true;
-								assert.equal((<BatchUpdate<ItemType>> update).updates[0].index, 1,
-									'Should have inserted item in correct order');
-							} else if (update.type === StoreOperation.Patch) {
-								patchReceived = true;
-								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
-								assert.equal(itemUpdate.index, 2, 'Should have new index of item');
-								assert.equal(itemUpdate.previousIndex, 1, 'Should list previous index of item');
-							} else if (update.type === StoreOperation.Put) {
-								assert.isTrue(deleteReceived, 'Didn\'t receive delete update');
-								assert.isTrue(addReceived, 'Should have received add update');
-								assert.isTrue(patchReceived, 'Should have received patch update');
-								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
-								assert.equal(itemUpdate.index, 1, 'Should have new index of item');
-								dfd.resolve();
-							}
-						} catch (e) {
-							dfd.reject(e);
-						}
-					});
-					source.add(data[1]);
-					source.patch(patches[1]);
-					source.delete(data[1].id);
-					source.put(createData()[1]);
-				});
+			subcollection.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				try {
+					if (update.type === StoreOperation.Delete) {
+						deleteReceived = true;
+						assert.equal((<ItemsDeleted<ItemType>> update).updates[0].index, 2,
+							'Should have index for deleted item');
+					} else if (update.type === StoreOperation.Add) {
+						addReceived = true;
+						assert.equal((<BatchUpdate<ItemType>> update).updates[0].index, 1,
+							'Should have inserted item in correct order');
+					} else if (update.type === StoreOperation.Patch) {
+						patchReceived = true;
+						const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+						assert.equal(itemUpdate.index, 2, 'Should have new index of item');
+						assert.equal(itemUpdate.previousIndex, 1, 'Should list previous index of item');
+					} else if (update.type === StoreOperation.Put) {
+						assert.isTrue(deleteReceived, 'Didn\'t receive delete update');
+						assert.isTrue(addReceived, 'Should have received add update');
+						assert.isTrue(patchReceived, 'Should have received patch update');
+						const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+						assert.equal(itemUpdate.index, 1, 'Should have new index of item');
+						dfd.resolve();
+					}
+				} catch (e) {
+					dfd.reject(e);
+				}
+			});
+			source.add(data[1]);
+			source.patch(patches[1]);
+			source.delete(data[1].id);
+			source.put(createData()[1]);
 		}
 	},
 
@@ -1136,47 +1125,45 @@ registerSuite({
 		'release stores should maintain queries and use them when providing update indices'(this: any) {
 			const dfd = this.async(1000);
 			const data = createData();
-			const source =  createMemoryStore({
+			const store =  createMemoryStore({
 				data: [ duplicate(data[0]), duplicate(data[2]) ]
-			});
+			})
+				.sort(createSort<ItemType>('value'))
+				.release();
 			let deleteReceived = false;
 			let addReceived = false;
 			let patchReceived = false;
-			source
-				.sort(createSort<ItemType>('value'))
-				.release().then(function(subcollection: Store<ItemType, any>) {
-					subcollection.observe().subscribe(function(update: MultiUpdate<ItemType>) {
-						try {
-							if (update.type === StoreOperation.Delete) {
-								deleteReceived = true;
-								assert.equal((<ItemsDeleted<ItemType>> update).updates[0].index, 2,
-									'Should have index for deleted item');
-							} else if (update.type === StoreOperation.Add) {
-								addReceived = true;
-								assert.equal((<BatchUpdate<ItemType>> update).updates[0].index, 1,
-									'Should have inserted item in correct order');
-							} else if (update.type === StoreOperation.Patch) {
-								patchReceived = true;
-								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
-								assert.equal(itemUpdate.index, 2, 'Should have new index of item');
-								assert.equal(itemUpdate.previousIndex, 1, 'Should list previous index of item');
-							} else if (update.type === StoreOperation.Put) {
-								assert.isTrue(deleteReceived, 'Didn\'t receive delete update');
-								assert.isTrue(addReceived, 'Should have received add update');
-								assert.isTrue(patchReceived, 'Should have received patch update');
-								const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
-								assert.equal(itemUpdate.index, 1, 'Should have new index of item');
-								dfd.resolve();
-							}
-						} catch (e) {
-							dfd.reject(e);
-						}
-					});
-					subcollection.add(data[1]);
-					subcollection.patch(patches[1]);
-					subcollection.delete(data[1].id);
-					subcollection.put(createData()[1]);
+			store.observe().subscribe(function(update: MultiUpdate<ItemType>) {
+				try {
+					if (update.type === StoreOperation.Delete) {
+						deleteReceived = true;
+						assert.equal((<ItemsDeleted<ItemType>> update).updates[0].index, 2,
+							'Should have index for deleted item');
+					} else if (update.type === StoreOperation.Add) {
+						addReceived = true;
+						assert.equal((<BatchUpdate<ItemType>> update).updates[0].index, 1,
+							'Should have inserted item in correct order');
+					} else if (update.type === StoreOperation.Patch) {
+						patchReceived = true;
+						const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+						assert.equal(itemUpdate.index, 2, 'Should have new index of item');
+						assert.equal(itemUpdate.previousIndex, 1, 'Should list previous index of item');
+					} else if (update.type === StoreOperation.Put) {
+						assert.isTrue(deleteReceived, 'Didn\'t receive delete update');
+						assert.isTrue(addReceived, 'Should have received add update');
+						assert.isTrue(patchReceived, 'Should have received patch update');
+						const itemUpdate = (<ItemsUpdated<ItemType>> update).updates[0];
+						assert.equal(itemUpdate.index, 1, 'Should have new index of item');
+						dfd.resolve();
+					}
+				} catch (e) {
+					dfd.reject(e);
+				}
 			});
+			store.add(data[1]);
+			store.patch(patches[1]);
+			store.delete(data[1].id);
+			store.put(createData()[1]);
 		}
 	},
 

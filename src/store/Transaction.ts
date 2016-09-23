@@ -1,4 +1,5 @@
-import { Store, createStoreObservable, StoreObservable } from './createMemoryStore';
+import { Store } from './createMemoryStore';
+import createStoreObservable, { StoreObservable } from './createStoreObservable';
 import Patch from '../patch/Patch';
 import Map from 'dojo-shim/Map';
 import { Observable } from 'rxjs';

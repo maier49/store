@@ -101,6 +101,10 @@ function createAction<T, U extends StoreActionDatum<T>>(
 	let observers: Observer<StoreActionResult<T>>[] = [];
 	let remove: number[] = [];
 	let completedResult: T[] | string[];
+	let rejectObservable: (error: any) => void;
+	const failedOperationPromise = new Promise(function(resolve, reject) {
+		rejectObservable = reject;
+	});
 	const observable = new Observable<StoreActionResult<T>>(function(observer: Observer<StoreActionResult<T>>) {
 		if (lastResult) {
 			observer.next(lastResult);
@@ -111,6 +115,10 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		else {
 			observers.push(observer);
 		}
+
+		failedOperationPromise.catch(function(error) {
+			observer.error(error);
+		});
 
 		return () => remove.push(observers.indexOf(observer));
 	});
@@ -214,7 +222,9 @@ function createAction<T, U extends StoreActionDatum<T>>(
 				throw Error('This action has already been completed. Cannot perform the same action twice');
 			}
 			done = true;
-			return fn().then(updateResultToActionResult.bind(null, this));
+			return fn().then(updateResultToActionResult.bind(null, this), function(error) {
+				rejectObservable(error);
+			});
 		},
 		observable: observable,
 		type: type,

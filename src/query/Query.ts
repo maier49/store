@@ -21,7 +21,7 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 	private finalQuery: Query<any, U>;
 	private queryStringBuilder: (query: CompoundQuery<any, any>) => string;
 
-	constructor(query: Query<T, U>, queryStringBuilder?: (query: CompoundQuery<any, any>) => string) {
+	constructor(query: Query<any, U>, queryStringBuilder?: (query: CompoundQuery<any, any>) => string) {
 		this.finalQuery = query;
 		this.queries = [];
 		this.queryStringBuilder = queryStringBuilder || function(query) {
@@ -41,8 +41,9 @@ export class CompoundQuery<T, U> implements Query<T, U> {
 
 	withQuery<V>(query: Query<U, V>): CompoundQuery<T, V> {
 		const isCompound = query instanceof CompoundQuery;
-		let queries = [ ...this.queries, this.finalQuery, ...(isCompound ? (<CompoundQuery<any, any>> query).queries : []) ];
-		let finalQuery = isCompound ? (<CompoundQuery<any, any>> query).finalQuery : query;
+		const compundQuery = query as CompoundQuery<U, V>;
+		let queries = [ ...this.queries, this.finalQuery, ...(isCompound ? compundQuery.queries : []) ];
+		let finalQuery = isCompound ? compundQuery.finalQuery : query;
 		const newQuery = new CompoundQuery<T, V>(finalQuery);
 		newQuery.queries = queries;
 

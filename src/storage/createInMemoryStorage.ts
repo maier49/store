@@ -29,13 +29,15 @@ export interface InMemoryStorageFactory extends StorageFactory {
 	<T>(options?: InMemoryStorageOptions<T>): Storage<T, InMemoryStorageUpdatePragma>;
 }
 
-const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemoryStorageUpdatePragma>, InMemoryStorageOptions<{}>>({
-		getIds(this: Storage<{}, {}>, items: {}[]| {}): string[] {
+type IdObject = { [ index: string ]: string; id: string };
+
+const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<IdObject, InMemoryStorageUpdatePragma>, InMemoryStorageOptions<{}>>({
+		getIds(this: Storage<{}, {}>, items: IdObject[]| IdObject): string[] {
 			const state = instanceStateMap.get(this);
-			const itemArray = Array.isArray(items) ? <{}[]> items : [ <{}> items ];
+			const itemArray = Array.isArray(items) ? <IdObject []> items : [ <IdObject> items ];
 			if (state.idProperty) {
 				return itemArray.map((item) => {
-					return (<any> item)[state.idProperty];
+					return item[state.idProperty];
 				});
 			}
 			else if (state.idFunction) {
@@ -43,7 +45,7 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemo
 			}
 			else {
 				return itemArray.map(function(item) {
-					return (<any> item).id;
+					return item.id;
 				});
 			}
 		},
@@ -86,7 +88,7 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemo
 				}
 			});
 			if (oldIndices.length && options && options.rejectOverwrite) {
-				throw Error('Objects already exist in store');
+				return Promise.reject(Error('Objects already exist in store'));
 			}
 
 			updatedItems.forEach(function(item, index) {
@@ -107,7 +109,7 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemo
 			if (typeof options.rejectOverwrite === 'undefined') {
 				options.rejectOverwrite = true;
 			}
-			return this.put(items).then(function(result) {
+			return this.put(items, options).then(function(result) {
 				result.type = StoreOperation.Add;
 				return result;
 			});
@@ -188,6 +190,15 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemo
 	state.idProperty = options.idProperty;
 	state.idFunction = options.idFunction;
 
+	instance.getIds = instance.getIds.bind(instance);
+	instance.generateId = instance.generateId.bind(instance);
+	instance.fetch = instance.fetch.bind(instance);
+	instance.get = instance.get.bind(instance);
+	instance.put = instance.put.bind(instance);
+	instance.add = instance.add.bind(instance);
+	instance.delete = instance.delete.bind(instance);
+	instance.patch = instance.patch.bind(instance);
+	instance.isUpdate = instance.isUpdate.bind(instance);
 	instanceStateMap.set(instance, state);
 });
 
