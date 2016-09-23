@@ -107,7 +107,8 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		}
 		if (lastResult && !lastResult.withConflicts) {
 			observer.complete();
-		} else {
+		}
+		else {
 			observers.push(observer);
 		}
 
@@ -134,7 +135,8 @@ function createAction<T, U extends StoreActionDatum<T>>(
 		if (result.successfulData && result.successfulData.length) {
 			if (!completedResult) {
 				completedResult = result.successfulData;
-			} else {
+			}
+			else {
 				completedResult = <string[] | T[]> [ ...result.successfulData, ...completedResult ];
 			}
 		}
@@ -170,7 +172,8 @@ function createAction<T, U extends StoreActionDatum<T>>(
 					}
 				}
 			};
-		} else {
+		}
+		else {
 			lastResult = {
 				retried: false,
 				withConflicts: false,

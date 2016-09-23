@@ -36,10 +36,12 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 				if (isAction<T>(nextActionOrUpdate)) {
 					self.actionManager(nextActionOrUpdate, processNext);
 					nextActionOrUpdate.do();
-				} else {
+				}
+				else {
 					nextActionOrUpdate().then(processNext);
 				}
-			} else {
+			}
+			else {
 				processing = false;
 			}
 		}
@@ -59,9 +61,11 @@ export abstract class BaseActionManager<T> implements StoreActionManager<T> {
 	queue<U extends StoreActionDatum<T>>(actionActionsOrUpdateFunction: StoreAction<T> | StoreAction<T>[] | StoreUpdateFunction<T, U> | (() => Promise<U>)): void | Promise<StoreUpdateResult<T, U>> | Promise<U> {
 		if (actionActionsOrUpdateFunction instanceof Array) {
 			this.waitingOperations.push(...(<StoreAction<T>[]> actionActionsOrUpdateFunction));
-		} else if (isAction<T>(actionActionsOrUpdateFunction)) {
+		}
+		else if (isAction<T>(actionActionsOrUpdateFunction)) {
 			this.waitingOperations.push(actionActionsOrUpdateFunction);
-		} else {
+		}
+		else {
 			const self = <StoreActionManager<T>> this;
 			return new Promise(function(resolve) {
 				self.waitingOperations.push(function() {

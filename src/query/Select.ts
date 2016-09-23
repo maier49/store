@@ -17,7 +17,8 @@ function buildOperations(obj: any, key?: JsonPointer): Array<(to: any, from: any
 		return Object.keys(value).reduce(function(prev, next) {
 			return [...prev, ...buildOperations(value, key.push(next))];
 		}, []);
-	} else {
+	}
+	else {
 		return [ function(to: any, from: any) {
 			navigate(key.pop(), to)[key.segments().pop()] = navigate(key, from);
 			return to;

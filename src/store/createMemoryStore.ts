@@ -192,9 +192,11 @@ function rejectDirtyData<T, O, U extends StoreActionDatum<T>> (
 	const ids: string[] = data.map(function(item: StoreActionDatum<T>) {
 		if (typeof item === 'string') {
 			return <string> item;
-		} else if ((<any> item).id && (<any> item).patch && typeof (<any> item).id === 'string') {
+		}
+		else if ((<any> item).id && (<any> item).patch && typeof (<any> item).id === 'string') {
 			return <string> (<any> item).id;
-		} else {
+		}
+		else {
 			return instance.getIds(<T> item)[0];
 		}
 	});
@@ -392,7 +394,8 @@ function queueActionAndCreateObservable<T, O>(instanceState: BaseStoreState<T, O
 		// If this has a source the ordering of actions is controlled there so we just need to
 		// execute the update that has been propagated back down.
 		action.do();
-	} else {
+	}
+	else {
 		instanceState.actionManager.queue(action);
 	}
 	return createStoreObservable(action.observable);
@@ -475,7 +478,8 @@ function propagateUpdate<T, O>(instance: Store<T, O>, instanceState: BaseStoreSt
 				localDelete(instance, instanceState, (<ItemsDeleted<T>> update).updates.map(itemDeleted => itemDeleted.id));
 				break;
 		}
-	} else {
+	}
+	else {
 
 	}
 }
@@ -495,7 +499,8 @@ function transformUpdates<T, O>(
 	});
 	if (instanceState.isTracking) {
 		return trackUpdates(instance, instanceState, type, items, ids);
-	} else {
+	}
+	else {
 		return Promise.resolve({
 			type: type,
 			updates: ids.map(function(id, index) {
@@ -531,10 +536,12 @@ function trackUpdates<T, O>(
 	if (instanceState.sourceQuery && !instanceState.sourceQuery.incremental) {
 		if (instanceState.source) {
 			newDataPromise = instanceState.source.fetch(instanceState.sourceQuery);
-		} else {
+		}
+		else {
 			newDataPromise = instanceState.storage.fetch(instanceState.sourceQuery);
 		}
-	} else {
+	}
+	else {
 		newDataPromise = Promise.resolve(applyUpdates(instanceState, type, items, ids));
 	}
 
@@ -570,7 +577,8 @@ function applyUpdates<T, O>(instanceState: BaseStoreState<T, O>, type: StoreOper
 				const updateEntry = instanceState.map.get(ids[index]);
 				if (updateEntry) {
 					instanceState.data[updateEntry.index] = item;
-				} else {
+				}
+				else {
 					instanceState.data.push(item);
 				}
 				break;
@@ -593,7 +601,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		const state = instanceStateMap.get(this);
 		if (state.source) {
 			return state.source.get(ids);
-		} else {
+		}
+		else {
 			return state.actionManager.queue((): Promise<{}[]> => {
 				return state.storage.get(Array.isArray(ids) ? <string[]> ids : [ <string> ids ]);
 			});
@@ -616,7 +625,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		const state = instanceStateMap.get(this);
 		if (state.source) {
 			return state.source.add(items);
-		} else {
+		}
+		else {
 			return localAdd(this, state, Array.isArray(items) ? <{}[]> items : [ <{}> items ], options);
 		}
 	},
@@ -625,7 +635,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		const state = instanceStateMap.get(this);
 		if (state.source) {
 			return state.source.put(items, options);
-		} else {
+		}
+		else {
 			return localPut(this, state, Array.isArray(items) ? <{}[]> items : [ <{}> items ], options);
 		}
 	},
@@ -634,7 +645,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		const state = instanceStateMap.get(this);
 		if (state.source) {
 			return state.source.patch(updates, options);
-		} else {
+		}
+		else {
 			let updateArray: Array<{ id: string; patch: Patch<{}, {}> }>;
 			if (updates instanceof Map) {
 				updateArray = [];
@@ -646,9 +658,11 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 						patch: updates.get(next.value)
 					});
 				}
-			} else if (Array.isArray(updates)) {
+			}
+			else if (Array.isArray(updates)) {
 				updateArray = <Array<{ id: string; patch: Patch<{}, {}> }>> updates;
-			} else {
+			}
+			else {
 				updateArray = [ <{ id: string, patch: Patch<{}, {}> }> updates ];
 			}
 			return localPatch(this, state, updateArray, options);
@@ -659,7 +673,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		const state = instanceStateMap.get(this);
 		if (state.source) {
 			return state.source.delete(ids);
-		} else {
+		}
+		else {
 			return localDelete(this, state, Array.isArray(ids) ? <string[]> ids : [ <string> ids ]);
 		}
 	},
@@ -676,7 +691,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 					let missingItemIds = ids.filter(id => !retrievedIdSet.has(id));
 					if (retrievedIdSet.size !== idSet.size || missingItemIds.length) {
 						observer.error(new Error(`ID(s) "${missingItemIds}" not found in store`));
-					} else {
+					}
+					else {
 						const observerEntry: { observes: Set<string>; observer: Observer<Update<{}>>} = {
 							observes: idSet,
 							observer: observer
@@ -684,7 +700,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 						(<string[]> ids).forEach(id => {
 							if (state.itemObservers.has(id)) {
 								state.itemObservers.get(id).push(observerEntry);
-							} else {
+							}
+							else {
 								state.itemObservers.set(id, [ observerEntry ]);
 							}
 						});
@@ -696,7 +713,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 					}
 				});
 			});
-		} else {
+		}
+		else {
 			return state.observable;
 		}
 	},
@@ -719,7 +737,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 				state.isTracking = false;
 				return self;
 			});
-		} else {
+		}
+		else {
 			return Promise.resolve(self);
 		}
 	},
@@ -751,7 +770,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		let dataPromise: Promise<{}[]>;
 		if (state.source) {
 			dataPromise = state.source.fetch(query);
-		} else {
+		}
+		else {
 			dataPromise = state.actionManager.queue(function() {
 				return state.storage.fetch(query);
 			});
@@ -764,7 +784,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 					state.map = map;
 					return state.data;
 				});
-			} else {
+			}
+			else {
 				return state.data;
 			}
 		});
@@ -777,7 +798,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 			const compoundQuery: CompoundQuery<{}, {}> = options.sourceQuery instanceof CompoundQuery ?
 				<CompoundQuery<{}, {}>> options.sourceQuery : new CompoundQuery(options.sourceQuery);
 			options.sourceQuery = compoundQuery.withQuery(query);
-		} else {
+		}
+		else {
 			options.sourceQuery = query;
 		}
 
@@ -788,7 +810,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		let filter: Filter<{}>;
 		if (isFilter(filterOrTest)) {
 			filter = filterOrTest;
-		} else {
+		}
+		else {
 			filter = this.createFilter().custom(<(item: {}) => boolean> filterOrTest);
 		}
 
@@ -799,7 +822,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		let range: StoreRange<{}>;
 		if (typeof count !== 'undefined') {
 			range = createRange<{}>(<number> rangeOrStart, count);
-		} else {
+		}
+		else {
 			range = <StoreRange<{}>> rangeOrStart;
 		}
 
@@ -810,7 +834,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		let sort: Sort<{}>;
 		if (isSort(sortOrComparator)) {
 			sort = sortOrComparator;
-		} else {
+		}
+		else {
 			sort = createSort(sortOrComparator, descending);
 		}
 

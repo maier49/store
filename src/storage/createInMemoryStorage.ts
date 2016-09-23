@@ -37,9 +37,11 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemo
 				return itemArray.map((item) => {
 					return (<any> item)[state.idProperty];
 				});
-			} else if (state.idFunction) {
+			}
+			else if (state.idFunction) {
 				return itemArray.map(state.idFunction);
-			} else {
+			}
+			else {
 				return itemArray.map(function(item) {
 					return (<any> item).id;
 				});
@@ -77,7 +79,8 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<{}, InMemo
 				if (typeof oldIndex === 'undefined') {
 					newIds.push(id);
 					newItems.push(items[index]);
-				} else {
+				}
+				else {
 					updatedItems.push(items[index]);
 					oldIndices.push(oldIndex);
 				}
