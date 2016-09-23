@@ -19,7 +19,7 @@ export interface InMemoryStorageState<T> {
 	index: Map<string, number>;
 }
 
-interface InMemoryStorageUpdatePragma {
+export interface InMemoryStorageUpdatePragma {
 	rejectOverwrite?: boolean;
 }
 
