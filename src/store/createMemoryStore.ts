@@ -1,4 +1,4 @@
-import Query, { CompoundQuery } from '../query/Query';
+import createCompoundQuery, { Query, QueryType, CompoundQuery } from '../query/createQuery';
 import Patch from '../patch/Patch';
 import Filter, { createFilter } from '../query/Filter';
 import Promise from 'dojo-shim/Promise';
@@ -10,7 +10,6 @@ import { Observer, Observable, Subscription } from 'rxjs';
 import createStoreObservable, { StoreObservable } from './createStoreObservable';
 import { Sort, createSort } from '../query/Sort';
 import StoreRange, { createRange } from '../query/StoreRange';
-import { QueryType } from '../query/Query';
 import { duplicate } from 'dojo-core/lang';
 import createTransaction, { Transaction } from './createTransaction';
 import StoreActionManager from '../storeActions/StoreActionManager';
@@ -150,7 +149,7 @@ interface BaseStoreState<T, O> {
 	source?: Store<T, O>;
 	storage?: Storage<T, O>;
 	sourceSubscription?: Subscription;
-	sourceQuery?: CompoundQuery<any, T>;
+	sourceQuery?: CompoundQuery<any, any>;
 	StoreFactory?: <T, O>(options?: StoreOptions<T, O>) => Store<T, O>;
 	map?: ItemMap<T>;
 	data?: T[];
@@ -789,8 +788,8 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		const state = instanceStateMap.get(this);
 		const options = getOptions(this, state);
 		if (options.sourceQuery) {
-			const compoundQuery: CompoundQuery<{}, {}> = options.sourceQuery instanceof CompoundQuery ?
-				<CompoundQuery<{}, {}>> options.sourceQuery : new CompoundQuery(options.sourceQuery);
+			const compoundQuery: CompoundQuery<{}, {}> = options.sourceQuery.queryType === QueryType.Compound ?
+				<CompoundQuery<{}, {}>> options.sourceQuery : createCompoundQuery({ query: options.sourceQuery });
 			options.sourceQuery = compoundQuery.withQuery(query);
 		}
 		else {
@@ -864,7 +863,7 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 		}
 	);
 	if (options.sourceQuery) {
-		instanceState.sourceQuery = new CompoundQuery(options.sourceQuery);
+		instanceState.sourceQuery = createCompoundQuery({ query: options.sourceQuery });
 	}
 
 	if (instanceState.source) {

@@ -1,8 +1,9 @@
-import Query from '../query/Query';
+import { Query } from '../query/createQuery';
 import { Storage, StorageOptions, StorageFactory, StoreOperation } from '../store/createMemoryStore';
 import compose from 'dojo-compose/compose';
 import Promise from 'dojo-shim/Promise';
 import WeakMap from 'dojo-shim/WeakMap';
+import Map from 'dojo-shim/Map';
 import Patch from '../patch/Patch';
 import { UpdateResults} from '../storeActions/StoreAction';
 

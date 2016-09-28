@@ -2,6 +2,7 @@ import { Store } from './createMemoryStore';
 import createStoreObservable, { StoreObservable } from './createStoreObservable';
 import Patch from '../patch/Patch';
 import Map from 'dojo-shim/Map';
+import WeakMap from 'dojo-shim/WeakMap';
 import { Observable } from 'rxjs';
 import { StoreActionResult } from '../storeActions/StoreAction';
 import compose from 'dojo-compose/compose';

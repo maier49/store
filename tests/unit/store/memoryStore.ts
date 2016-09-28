@@ -9,7 +9,7 @@ import {
 import { StoreActionResult } from '../../../src/storeActions/StoreAction';
 import Patch, { diff } from '../../../src/patch/Patch';
 import { createPointer } from '../../../src/patch/JsonPointer';
-import { CompoundQuery } from '../../../src/query/Query';
+import createCompoundQuery from '../../../src/query/createQuery';
 import { createFilter } from '../../../src/query/Filter';
 import { createSort } from '../../../src/query/Sort';
 import { createRange } from '../../../src/query/StoreRange';
@@ -498,11 +498,13 @@ registerSuite({
 			});
 
 			store.fetch(
-				new CompoundQuery(
-					createFilter()
-						.deepEqualTo(createPointer('nestedProperty', 'value'), 2)
-						.or()
-						.deepEqualTo(createPointer('nestedProperty', 'value'), 3)
+				createCompoundQuery(
+					{
+						query: createFilter()
+							.deepEqualTo(createPointer('nestedProperty', 'value'), 2)
+							.or()
+							.deepEqualTo(createPointer('nestedProperty', 'value'), 3)
+					}
 				)
 					.withQuery(createSort(createPointer('nestedProperty', 'value')))
 			)

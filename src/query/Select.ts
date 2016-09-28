@@ -1,4 +1,4 @@
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 import JsonPointer, { createPointer, navigate } from '../patch/JsonPointer';
 import { shouldRecurseInto } from '../utils';
 

@@ -1,4 +1,4 @@
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 import JsonPointer, { navigate, createPointer } from '../patch/JsonPointer';
 
 export interface Sort<T> extends Query<T, T> {

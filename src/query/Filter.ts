@@ -1,6 +1,6 @@
 import JsonPointer, { navigate, createPointer } from '../patch/JsonPointer';
 import { isEqual } from '../utils';
-import Query, { QueryType } from './Query';
+import { Query, QueryType } from './createQuery';
 
 export type FilterFunction<T> = (data: T[]) => T[];
 export type ObjectPointer = JsonPointer | string;
