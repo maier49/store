@@ -12,7 +12,7 @@ import { Sort, createSort } from '../query/Sort';
 import StoreRange, { createRange } from '../query/StoreRange';
 import { QueryType } from '../query/Query';
 import { duplicate } from 'dojo-core/lang';
-import { Transaction, SimpleTransaction } from './Transaction';
+import createTransaction, { Transaction } from './createTransaction';
 import StoreActionManager from '../storeActions/StoreActionManager';
 import {
 	StoreUpdateFunction, StoreUpdateResult, createPutAction, createPatchAction, createAddAction,
@@ -837,7 +837,7 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 	},
 
 	transaction(this: Store<{}, {}>): Transaction<{}, {}> {
-		return new SimpleTransaction<{}, {}>(this);
+		return createTransaction({ store: this });
 	}
 }, <T, O>(instance: Store<T, O>, options: StoreOptions<T, O>) => {
 	options = options || {};
