@@ -12,13 +12,12 @@ import { Sort, createSort } from '../query/Sort';
 import StoreRange, { createRange } from '../query/StoreRange';
 import { duplicate } from 'dojo-core/lang';
 import createTransaction, { Transaction } from './createTransaction';
-import StoreActionManager from '../storeActions/StoreActionManager';
+import createAsyncPassiveActionManager, { StoreActionManager } from '../storeActions/createStoreActionManager';
 import {
 	StoreUpdateFunction, StoreUpdateResult, createPutAction, createPatchAction, createAddAction,
 	createDeleteAction, StoreActionDatum, StoreActionData, StoreUpdateDataFunction, UpdateResults, StoreAction,
 	FilteredData
 } from '../storeActions/StoreAction';
-import {AsyncPassiveActionManager} from '../storeActions/StoreActionManager';
 import createInMemoryStorage from '../storage/createInMemoryStorage';
 import {diff} from '../patch/Patch';
 import {PatchMapEntry} from '../patch/Patch';
@@ -156,7 +155,7 @@ interface BaseStoreState<T, O> {
 	isTracking?: boolean;
 	itemObservers?: Map<string, { observes: Set<string>; observer: Observer<Update<T>> }[]>;
 	observers?: Observer<MultiUpdate<T>>[];
-	actionManager?: StoreActionManager<T>;
+	actionManager?: StoreActionManager<any>;
 	removeObservers?: number[];
 	observable?: Observable<MultiUpdate<T>>;
 	version: number;
@@ -886,7 +885,7 @@ const createMemoryStore: StoreFactory = compose<Store<{}, {}>, StoreOptions<{}, 
 	}
 
 	instanceState.StoreFactory = createMemoryStore;
-	instanceState.actionManager = options.actionManager || new AsyncPassiveActionManager<T>();
+	instanceState.actionManager = options.actionManager || createAsyncPassiveActionManager();
 	instanceState.mediateDataConflicts = options.mediateDataConflicts;
 	instanceStateMap.set(instance, instanceState);
 	if (options.data) {
