@@ -4,6 +4,7 @@ import WeakMap from 'dojo-shim/WeakMap';
 import { StoreObservable } from '../createStoreObservable';
 import { ComposeMixinDescriptor } from 'dojo-compose/compose';
 import {UpdateResults} from '../../storage/createInMemoryStorage';
+import { SubcollectionStore } from '../createSubcollectionStore';
 
 export interface StoreDelta<T> {
 	updates: T[];
@@ -121,6 +122,10 @@ function notifyItemObservers<T, O extends CrudOptions, U extends UpdateResults<T
 	}
 }
 
+function isSubcollectionStore(store: any): store is SubcollectionStore<any, any, any, any> {
+	return Boolean(store.createSubcollection);
+}
+
 function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateResults<T>>(): ComposeMixinDescriptor<
 	Store<T, O, U>,
 	CrudOptions,
@@ -130,6 +135,12 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 	return 	{
 		mixin: {
 			observe(this: ObservableStore<T, O, U>, idOrIds?: string | string[]): any {
+				if (isSubcollectionStore(this)) {
+					const subcollectionStore = <SubcollectionStore<any, any, any, any>> <any> this;
+					if (subcollectionStore.source) {
+						return subcollectionStore.source.observe(idOrIds);
+					}
+				}
 				if (idOrIds) {
 					const self = <ObservableStore<T, O, U>> this;
 					const state = instanceStateMap.get(self);

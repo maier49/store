@@ -11,6 +11,7 @@ export interface SubcollectionOptions<T, O extends CrudOptions, U extends Update
 
 interface SubcollectionState<T, O extends CrudOptions, U extends UpdateResults<T>> {
 	source?: Store<T, O, U>;
+	factory: Function;
 }
 
 const instanceStateMap = new WeakMap<SubcollectionStore<{}, {}, any, any>, SubcollectionState<{}, {}, any>>();
@@ -33,11 +34,13 @@ export interface SubcollectionFactory extends ComposeFactory<SubcollectionStore<
 const createSubcollectionStore: SubcollectionFactory = createStore
 	.extend({
 		get source(this: SubcollectionStore<{}, {}, any, SubcollectionStore<{}, {}, any, any>>) {
-			return instanceStateMap.get(this).source;
+			const state = instanceStateMap.get(this);
+			return state && state.source;
 		},
 
-		get factory() {
-			return createSubcollectionStore;
+		get factory(this: SubcollectionStore<{}, {}, any, SubcollectionStore<{}, {}, any, any>>) {
+			const state = instanceStateMap.get(this);
+			return state && state.factory;
 		},
 
 		createSubcollection(this: SubcollectionStore<{}, {}, any, SubcollectionStore<{}, {}, any, any>>) {
@@ -61,7 +64,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 			options?: SubcollectionOptions<T, O, U>) {
 			options = options || {};
 			instanceStateMap.set(instance, {
-				source: options.source
+				source: options.source,
+				factory: instance.constructor
 			});
 		},
 		aspectAdvice: {

@@ -7,6 +7,15 @@ import createSubcollectionStore from '../../../src/store/createSubcollectionStor
 registerSuite({
 	name: 'createSubcollectionStore',
 
+	'initialize with data': function(this: any) {
+		const dfd = this.async(1000);
+		createSubcollectionStore({
+			data: createData()
+		}).fetch().then(function(data) {
+			assert.deepEqual(data, createData(), 'Didn\'t initialize properly with data');
+		}).then(dfd.resolve);
+	},
+
 	'should delegate to parent store': (function(){
 		function getStoreAndDfd(test: any) {
 			const dfd = test.async(1000);
