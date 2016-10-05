@@ -36,7 +36,7 @@ function isSort<T>(sortOrComparator: Sort<T> | ((a: T, b: T) => number) | string
 	return paramType !== 'function' && paramType !== 'string' && typeof (<Sort<T>> sortOrComparator).apply === 'function';
 }
 type QueryStoreSubCollection<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> =
-	QueryMixin<T, O, U, C> & SubcollectionStore<T, O, U, C & QueryMixin<T, O, U, C>>
+	QueryMixin<T, O, U, C> & SubcollectionStore<T, O, U, C & QueryMixin<T, O, U, C>>;
 function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>>(): ComposeMixinDescriptor<
 	SubcollectionStore<T, O, U, any>,
 	SubcollectionOptions<T, O, U>,
