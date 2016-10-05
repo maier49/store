@@ -12,6 +12,8 @@ import { CrudOptions, Store } from '../../../../src/store/createStore';
 import { UpdateResults } from '../../../../src/storage/createInMemoryStorage';
 import { ComposeFactory } from 'dojo-compose/compose';
 import { createFilter } from '../../../../src/query/Filter';
+import { createRange } from '../../../../src/query/StoreRange';
+import { createSort } from '../../../../src/query/Sort';
 
 interface QueryStoreFactory extends ComposeFactory<QueryStore<{}, {}, any, any>, SubcollectionOptions<{}, {}, any>> {
 	<T, O extends CrudOptions, U extends UpdateResults<T>>(options?: SubcollectionOptions<T, O, U>): QueryStore<T, O, U, Store<T, O, U>>;
@@ -114,7 +116,51 @@ registerSuite(function(){
 					dfd.resolve();
 				}
 			});
-		}
+		},
 
+		'should allow fetch with sort on a sorted store'(this: any) {
+			const { dfd, queryStore } = getStoreAndDfd(this);
+			const data = createData();
+
+			queryStore.sort(createSort<ItemType>('id', true)).fetch(createSort<ItemType>('id', false))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [ data[0], data[1], data[2] ], 'Data fetched with sort was incorrect');
+				}));
+		},
+
+		'should allow fetch with filter on a filtered store'(this: any) {
+			const { dfd, queryStore } = getStoreAndDfd(this);
+			const data = createData();
+
+			queryStore.filter(createFilter<ItemType>().greaterThanOrEqualTo('value', 2)).fetch(createFilter<ItemType>().lessThan('value', 3))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [ data[1] ], 'Data fetched with filter was incorrect');
+				}));
+		},
+
+		'should allow fetch with range on a range filtered store'(this: any) {
+			const { dfd, queryStore } = getStoreAndDfd(this);
+			const data = createData();
+
+			queryStore.range(1, 2).fetch(createRange<ItemType>(1, 1))
+				.then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [ data[2] ], 'Data fetched with range was incorrect');
+				}));
+		},
+
+		'all query mixin APIs should work together'(this: any) {
+			const { dfd, queryStore } = getStoreAndDfd(this);
+			const data = createData();
+
+			queryStore
+				.filter(createFilter<ItemType>().greaterThanOrEqualTo('value', 2))
+				.filter( (item) => item.value >= 2 )
+				.sort( createSort<ItemType>('id', true) )
+				.range(createRange<ItemType>(1, 1))
+				.range(0, 1)
+				.fetch().then(dfd.callback(function(fetchedData: ItemType[]) {
+					assert.deepEqual(fetchedData, [ data[1] ], 'Data fetched with multiple queries was incorrect');
+				}));
+		}
 	};
 }());
