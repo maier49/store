@@ -46,20 +46,9 @@ function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, 
 	const queryMixin: QueryMixin<T, O, U, C> = {
 
 		query(this: QueryStoreSubCollection<T, O, U, C>, query: Query<T, T>) {
-
-			const state = instanceStateMap.get(this);
-
-			const sourceQuery = state.sourceQuery;
-
-			if (sourceQuery) {
-				const compoundQuery = sourceQuery.queryType === QueryType.Compound ?
-					<CompoundQuery<T, T>> sourceQuery : createCompoundQuery({ query: sourceQuery });
-				state.sourceQuery = compoundQuery.withQuery(query);
-			} else {
-				state.sourceQuery = query;
-			}
-
-			return this.createSubcollection();
+			return this.createSubcollection({
+				sourceQuery: query
+			});
 		},
 
 		filter(this: QueryStore<T, O, U, C>, filterOrTest: Filter<T> | ((item: T) => boolean)) {
@@ -119,13 +108,6 @@ function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, 
 						args[0] = query;
 					}
 					return args;
-				}
-			},
-			after: {
-				getOptions(this: QueryStore<T, O, U, C>, options: SubcollectionOptions<T, O, U> & QueryOptions<T>) {
-					const state = instanceStateMap.get(this);
-					options.sourceQuery = state.sourceQuery;
-					return options;
 				}
 			}
 		},

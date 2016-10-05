@@ -4,6 +4,7 @@ import { ComposeFactory } from 'dojo-compose/compose';
 import WeakMap from 'dojo-shim/WeakMap';
 import { StoreObservable } from './createStoreObservable';
 import { Query } from '../query/createQuery';
+import { deepAssign } from 'dojo-core/lang';
 
 export interface SubcollectionOptions<T, O extends CrudOptions, U extends UpdateResults<T>> extends StoreOptions<T, O> {
 	source?: Store<T, O, U>;
@@ -21,7 +22,7 @@ const instanceStateMap = new WeakMap<SubcollectionStore<{}, {}, any, any>, Subco
  * source, e.g. querying/tracking.
  */
 export interface SubcollectionStore<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> extends Store<T, O, U> {
-	createSubcollection(): C & SubcollectionStore<T, O, U, C>;
+	createSubcollection(options?: {}): C & SubcollectionStore<T, O, U, C>;
 	readonly source: C | undefined;
 	readonly factory: (options: O) => (C & SubcollectionStore<T, O, U, C>) | undefined;
 	getOptions(): SubcollectionOptions<T, O, U>;
@@ -43,11 +44,12 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 			return state && state.factory;
 		},
 
-		createSubcollection(this: SubcollectionStore<{}, {}, any, SubcollectionStore<{}, {}, any, any>>) {
+		createSubcollection(this: SubcollectionStore<{}, {}, any, SubcollectionStore<{}, {}, any, any>>, options?: {}) {
 			// Need to reassign the factory or compose throws an error for instantiating
 			// with new
 			const factory = this.factory;
-			return factory(this.getOptions());
+			const defaultOptions = this.getOptions();
+			return factory(deepAssign(defaultOptions, options || {}));
 		},
 
 		getOptions(this: SubcollectionStore<{}, {}, any, SubcollectionStore<{}, {}, any, any>>): SubcollectionOptions<{}, {}, any> {
