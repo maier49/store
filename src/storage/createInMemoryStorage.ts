@@ -198,16 +198,13 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<IdObject, 
 		}
 	}, <T, O>(instance: Storage<T, O>, options?: StoreOptions<T, CrudOptions>) => {
 	options = options || {};
-	const state = <InMemoryStorageState<T>> {};
-
-	state.data = [];
-	state.nextId = 1;
-	state.index = new Map<string, number>();
-
-	state.idProperty = options.idProperty;
-	state.idFunction = options.idFunction;
-
-	instanceStateMap.set(instance, state);
+	instanceStateMap.set(instance, {
+		data: [],
+		nextId: 1,
+		index: new Map<string, number>(),
+		idProperty: options.idProperty,
+		idFunction: options.idFunction
+	});
 });
 
 export default createInMemoryStorage;

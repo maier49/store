@@ -70,9 +70,15 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 
 		let newDataPromise: Promise<T[]>;
 
-		if (state.sourceQuery && !state.sourceQuery.incremental) {
+		if (update.afterAll) {
+			newDataPromise = Promise.resolve(
+				state.sourceQuery ? state.sourceQuery.apply(update.afterAll) : update.afterAll
+			);
+		}
+		else if (state.sourceQuery && !state.sourceQuery.incremental) {
 			newDataPromise = store.fetch();
-		} else {
+		}
+		else {
 			let newData = state.localData.slice().concat(update.adds);
 
 			store.identify(update.updates).forEach(function(id, index) {
@@ -86,7 +92,7 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 			});
 
 			if (state.sourceQuery) {
-				newData = state.sourceQuery.apply(newData);
+				newDataPromise = Promise.resolve(state.sourceQuery.apply(newData));
 			}
 		}
 
@@ -142,6 +148,8 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 			});
 
 			const trackedUpdate: TrackedStoreDelta<T> = {
+				beforeAll: state.localData,
+				afterAll: newData,
 				updates: trackedUpdates,
 				adds: trackedAdds,
 				deletes: trackedDeletes,
@@ -150,15 +158,22 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 				addedToTracked: addedToTracked
 			};
 
-			state.observers.forEach(function(observer) {
-				observer.next(trackedUpdate);
-			});
+			// Don't send an update if nothing happened withing the scope of this tracked.
+			if (trackedUpdates.length || trackedAdds.length || trackedDeletes.length || removedFromTracked.length ||
+			movedInTracked.length || addedToTracked.length
+			) {
+				state.localData = newData;
+				state.idToIndex = newIndex;
+				state.observers.forEach(function(observer) {
+					observer.next(trackedUpdate);
+				});
 
-			state.toRemoveIndices.sort().reverse().forEach(function(index) {
-				state.observers.splice(index, 1);
-			});
+				state.toRemoveIndices.sort().reverse().forEach(function(index) {
+					state.observers.splice(index, 1);
+				});
 
-			state.toRemoveIndices = [];
+				state.toRemoveIndices = [];
+			}
 		});
 	};
 }

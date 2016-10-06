@@ -10,9 +10,7 @@ import createObservableStoreMixin from '../../../../src/store/mixins/createObser
 import { ItemType, createData } from '../../support/createData';
 import { ObservableStore } from '../../../../src/store/mixins/createObservableStoreMixin';
 import { SubcollectionStore } from '../../../../src/store/createSubcollectionStore';
-import {createPatch} from '../../../../src/patch/Patch';
-import {createOperation, OperationType} from '../../../../src/patch/Operation';
-import {createPointer} from '../../../../src/patch/JsonPointer';
+import {ObservableStoreOptions} from '../../../../src/store/mixins/createObservableStoreMixin';
 
 interface TrackableObservableQueryStore<T, O extends CrudOptions, U extends UpdateResults<T>> extends
 	ObservableStore<T, O, U>,
@@ -21,10 +19,11 @@ interface TrackableObservableQueryStore<T, O extends CrudOptions, U extends Upda
 	TrackableMixin<T, O, U, ObservableStore<T, O, U>> {
 }
 
-type TrackableQueryOptions<T> = TrackableOptions<T> & StoreOptions<T, CrudOptions> & QueryOptions<T>;
+type TrackableQueryOptions<T, O extends CrudOptions> =
+	TrackableOptions<T> & StoreOptions<T, CrudOptions> & QueryOptions<T> & ObservableStoreOptions<T, O>;
 
-interface TrackableQueryStoreFactory extends ComposeFactory<TrackableObservableQueryStore<{}, {}, any>, TrackableQueryOptions<{}>> {
-	<T, O extends TrackableQueryOptions<T>, U extends UpdateResults<T>>(options?: TrackableQueryOptions<T>): TrackableObservableQueryStore<T, O, U>;
+interface TrackableQueryStoreFactory extends ComposeFactory<TrackableObservableQueryStore<{}, {}, any>, TrackableQueryOptions<{}, {}>> {
+	<T, O extends CrudOptions, U extends UpdateResults<T>>(options?: TrackableQueryOptions<T, O>): TrackableObservableQueryStore<T, O, U>;
 }
 
 registerSuite(function() {
@@ -99,23 +98,34 @@ registerSuite(function() {
 				}
 			});
 
-			trackableQueryStore.delete('2');
-			trackableQueryStore.add({ id: 'new', value: 10, nestedProperty: { value: 10 }});
-			// Shouldn't create a notification
-			trackableQueryStore.add({ id: 'ignored', value: -1, nestedProperty: { value: - 1} });
-			trackableQueryStore.patch({
-				id: 'ignored',
-				patch: createPatch([
-					createOperation(OperationType.Replace, createPointer('value'), 5) ,
-					createOperation(OperationType.Replace, createPointer('nestedProperty', 'value'), 5)
-				])
-			});
-			trackableQueryStore.put({
-				id: 'new',
-				value: 4,
-				nestedProperty: {
-					value: 10
-				}
+			trackableQueryStore.delete('2').then(function() {
+				return trackableQueryStore.add({ id: 'new', value: 10, nestedProperty: { value: 10 }});
+			}).then(function() {
+				// Shouldn't create a notification
+				return trackableQueryStore.add({ id: 'ignored', value: -1, nestedProperty: { value: - 1} });
+			}).then(function() {
+				return trackableQueryStore.put({
+					id: 'ignored',
+					value: 5,
+					nestedProperty: {
+						value: 5
+					}
+				});
+				// return trackableQueryStore.patch({
+				// 	id: 'ignored',
+				// 	patch: createPatch([
+				// 		createOperation(OperationType.Replace, createPointer('value'), 5) ,
+				// 		createOperation(OperationType.Replace, createPointer('nestedProperty', 'value'), 5)
+				// 	])
+				// });
+			}).then(function() {
+				trackableQueryStore.put({
+					id: 'new',
+					value: 4,
+					nestedProperty: {
+						value: 10
+					}
+				});
 			});
 		}
 	};

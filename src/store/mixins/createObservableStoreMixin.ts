@@ -2,9 +2,10 @@ import { CrudOptions, Store, StoreOptions } from '../createStore';
 import { Observable, Observer } from 'rxjs';
 import WeakMap from 'dojo-shim/WeakMap';
 import { StoreObservable } from '../createStoreObservable';
-import { ComposeMixinDescriptor } from 'dojo-compose/compose';
-import {UpdateResults} from '../../storage/createInMemoryStorage';
+import { UpdateResults } from '../../storage/createInMemoryStorage';
 import { SubcollectionStore } from '../createSubcollectionStore';
+import { ComposeMixinDescriptor } from 'dojo-compose/compose';
+import { after } from 'dojo-compose/aspect';
 
 export interface StoreDelta<T> {
 	updates: T[];
@@ -42,7 +43,6 @@ export interface ObservableStoreState<T> {
 	deletes: string[];
 	adds: T[];
 	beforeAll?: T[];
-	afterAll?: T[];
 	scheduleUpdates: (delta: StoreDelta<T>, sendUpdates: () => void) => void;
 }
 
@@ -52,23 +52,32 @@ export type ObservableStoreOptions<T, O extends CrudOptions> = ObservableStoreMi
 
 const instanceStateMap = new WeakMap<ObservableStoreMixin<any>, ObservableStoreState<any>>();
 
-function sendUpdates<T>(this: ObservableStoreMixin<T>) {
+function sendUpdates<T, O extends CrudOptions, U extends UpdateResults<T>>(this: ObservableStore<T, O, U>) {
 	const state = instanceStateMap.get(this);
-	const storeDelta: StoreDelta<T> = {
-		updates: state.updates.splice(0),
-		deletes: state.deletes.splice(0),
-		adds: state.adds.splice(0),
-		beforeAll: state.beforeAll,
-		afterAll: state.afterAll
-	};
-	state.beforeAll = state.afterAll = null;
-	state.observers.forEach(function(observer: Observer<StoreDelta<T>>) {
-		observer.next(storeDelta);
-	});
+	function send(after?: T[]) {
+		const storeDelta: StoreDelta<T> = {
+			updates: state.updates.splice(0),
+			deletes: state.deletes.splice(0),
+			adds: state.adds.splice(0),
+			beforeAll: state.beforeAll,
+			afterAll: after
+		};
+		state.beforeAll = after;
+		state.observers.forEach(function(observer: Observer<StoreDelta<T>>) {
+			observer.next(storeDelta);
+		});
 
-	state.toRemoveIndices.splice(0).sort().reverse().forEach(function(removeIndex: number) {
-		state.observers.splice(removeIndex, 1);
-	});
+		state.toRemoveIndices.splice(0).sort().reverse().forEach(function(removeIndex: number) {
+			state.observers.splice(removeIndex, 1);
+		});
+	}
+	if (state.fetchAroundUpdates) {
+		this.fetch().then(function(data: T[]) {
+			send(data);
+		});
+	} else {
+		send();
+	}
 }
 
 function isObserverEntry<T>(observer: Observer<T> | ObserverSetEntry<T>): observer is ObserverSetEntry<T> {
@@ -232,11 +241,13 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 				add(this: ObservableStore<T, O, U>, result: StoreObservable<T, U>) {
 					const self = this;
 					const state = instanceStateMap.get(self);
-					result.then(function(addedItems: T[]) {
-						notifyItemObservers(addedItems, [], state, self);
-						state.adds = state.adds.concat(addedItems);
-						state.scheduleUpdates(state, sendUpdates.bind(self));
-					});
+					if (state) {
+						result.then(function(addedItems: T[]) {
+							notifyItemObservers(addedItems, [], state, self);
+							state.adds = state.adds.concat(addedItems);
+							state.scheduleUpdates(state, sendUpdates.bind(self));
+						});
+					}
 					return result;
 				},
 
@@ -279,8 +290,7 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 					return state.toRemoveIndices.push(state.observers.indexOf(observer));
 				};
 			}.bind(instance));
-
-			instanceStateMap.set(instance, {
+			const state: ObservableStoreState<T> = {
 				fetchAroundUpdates: Boolean(options.fetchAroundUpdates),
 				scheduleUpdates: options.scheduleUpdates || function(storeDelta: StoreDelta<T>, sendUpdates: () => void) {
 					sendUpdates();
@@ -291,8 +301,21 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 				storeObservable: storeObservable,
 				updates: [],
 				deletes: [],
-				adds: []
-			});
+				adds: [],
+				beforeAll: options.fetchAroundUpdates ? [] : undefined
+			};
+
+			if (isSubcollectionStore(instance)) {
+				const subcollectionStore = <SubcollectionStore<any, any, any, any>> <any> instance;
+				subcollectionStore.getOptions = after(subcollectionStore.getOptions, function(options?: { fetchAroundUpdates?: boolean }) {
+					options = options || {};
+					options.fetchAroundUpdates = state.fetchAroundUpdates;
+
+					return options;
+				});
+			}
+
+			instanceStateMap.set(instance, state);
 		}
 	};
 }
