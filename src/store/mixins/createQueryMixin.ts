@@ -10,19 +10,20 @@ import { ComposeMixinDescriptor } from 'dojo-compose/compose';
 
 // export interface QueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends SubcollectionStore<T, O, U, C>> extends SubcollectionStore<T, O, U, C> {
 export interface QueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> {
-	query(query: Query<T, T>): C & QueryMixin<T, O, U, C>;
-	filter(filter: Filter<T>): C & QueryMixin<T, O, U, C>;
-	filter(test: (item: T) => boolean): C & QueryMixin<T, O, U, C>;
-	range(range: StoreRange<T>): C & QueryMixin<T, O, U, C>;
-	range(start: number, count: number): C & QueryMixin<T, O, U, C>;
-	sort(sort: Sort<T> | ((a: T, b: T) => number) | string, descending?: boolean): C & QueryMixin<T, O, U, C>;
+	query(query: Query<T, T>): C & this;
+	filter(filter: Filter<T>): C & this;
+	filter(test: (item: T) => boolean): C & this;
+	range(range: StoreRange<T>): C & this;
+	range(start: number, count: number): C & this;
+	sort(sort: Sort<T> | ((a: T, b: T) => number) | string, descending?: boolean): C & this;
 }
 
 export type QueryStore<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> = QueryMixin<T, O, U, C> & C;
 
-interface QueryOptions<T> {
+export interface QueryOptions<T> {
 	sourceQuery?: Query<T, T>;
 }
+
 interface QueryState<T> {
 	sourceQuery?: Query<T, T>;
 }
@@ -31,12 +32,15 @@ const instanceStateMap = new WeakMap<QueryMixin<any, any, UpdateResults<any>, an
 function isFilter<T>(filterOrTest: Query<any, any> | ((item: T) => boolean)): filterOrTest is Filter<T> {
 	return typeof filterOrTest !== 'function' && (<Query<any, any>> filterOrTest).queryType === QueryType.Filter;
 }
+
 function isSort<T>(sortOrComparator: Sort<T> | ((a: T, b: T) => number) | string): sortOrComparator is Sort<T> {
 	const paramType = typeof sortOrComparator;
 	return paramType !== 'function' && paramType !== 'string' && typeof (<Sort<T>> sortOrComparator).apply === 'function';
 }
+
 type QueryStoreSubCollection<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> =
 	QueryMixin<T, O, U, C> & SubcollectionStore<T, O, U, C & QueryMixin<T, O, U, C>>;
+
 function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>>(): ComposeMixinDescriptor<
 	SubcollectionStore<T, O, U, any>,
 	SubcollectionOptions<T, O, U>,
@@ -46,6 +50,13 @@ function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, 
 	const queryMixin: QueryMixin<T, O, U, C> = {
 
 		query(this: QueryStoreSubCollection<T, O, U, C>, query: Query<T, T>) {
+			const state = instanceStateMap.get(this);
+			if (state.sourceQuery) {
+				const compoundQuery = state.sourceQuery.queryType === QueryType.Compound ?
+					<CompoundQuery<T, T>> state.sourceQuery : createCompoundQuery({ query: state.sourceQuery });
+
+				query = compoundQuery.withQuery(query);
+			}
 			return this.createSubcollection({
 				sourceQuery: query
 			});
@@ -108,6 +119,15 @@ function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, 
 						args[0] = query;
 					}
 					return args;
+				},
+
+				createSubcollection(this: QueryStore<T, O, U, C>, options?: QueryOptions<T>) {
+					options = options || {};
+					const state = instanceStateMap.get(this);
+					if (!options.sourceQuery && state.sourceQuery) {
+						options.sourceQuery = state.sourceQuery;
+					}
+					return [ options ];
 				}
 			}
 		},

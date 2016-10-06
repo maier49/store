@@ -46,7 +46,8 @@ export interface ObservableStoreState<T> {
 	scheduleUpdates: (delta: StoreDelta<T>, sendUpdates: () => void) => void;
 }
 
-export type ObservableStore<T, O extends CrudOptions, U extends UpdateResults<T>> = ObservableStoreMixin<T> & Store<T, O, U>;
+export interface ObservableStore<T, O extends CrudOptions, U extends UpdateResults<T>> extends
+	ObservableStoreMixin<T>, Store<T, O, U> {};
 export type ObservableStoreOptions<T, O extends CrudOptions> = ObservableStoreMixinOptions<T> & StoreOptions<T, O>;
 
 const instanceStateMap = new WeakMap<ObservableStoreMixin<any>, ObservableStoreState<any>>();

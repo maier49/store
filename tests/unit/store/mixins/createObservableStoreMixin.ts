@@ -1,7 +1,9 @@
 import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
 import createObservableStoreMixin, {
-	ObservableStore, ObservableStoreOptions, StoreDelta,
+	ObservableStore,
+	ObservableStoreOptions,
+	StoreDelta,
 	ItemUpdate
 } from '../../../../src/store/mixins/createObservableStoreMixin';
 import { ItemType, createData, createUpdates, patches } from '../../support/createData';
