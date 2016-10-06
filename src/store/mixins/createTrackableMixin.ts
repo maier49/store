@@ -5,7 +5,6 @@ import { ObservableStore, ItemUpdate, StoreDelta } from './createObservableStore
 import { Observable, Observer } from 'rxjs';
 import { ComposeMixinDescriptor } from 'dojo-compose/compose';
 import Map from 'dojo-shim/Map';
-import Set from 'dojo-shim/Set';
 import {Query} from '../../query/createQuery';
 
 export interface TrackedStoreDelta<T> extends StoreDelta<T> {
@@ -18,18 +17,18 @@ export interface TrackedObservableStoreMixin<T> {
 	observe(): Observable<TrackedStoreDelta<T>>;
 }
 
-export interface TrackAndReleaseMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> {
-	track(): TrackedObservableStoreMixin<T> & C & TrackAndReleaseMixin<T, O, U, C>;
-	release(): ObservableStore<T, O, U> & C & TrackAndReleaseMixin<T, O, U, C>;
+export interface TrackableMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends ObservableStore<T, O, U>> {
+	track(): TrackedObservableStoreMixin<T> & C & this;
+	release(): ObservableStore<T, O, U> & C & this;
 }
 
-export type TrackAndReleaseStore<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> = TrackAndReleaseMixin<T, O, U, C> & C;
+export type TrackableStore<T, O extends CrudOptions, U extends UpdateResults<T>, C extends ObservableStore<T, O, U>> = TrackableMixin<T, O, U, C> & C;
 
-export interface TrackAndReleaseOptions<T> {
+export interface TrackableOptions<T> {
 	isTracking?: boolean;
 	sourceQuery?: Query<T, T>;
 }
-interface TrackAndReleaseState<T> {
+interface TrackableState<T> {
 	isTracking: boolean;
 	localData: T[];
 	idToIndex: Map<string, number>;
@@ -39,12 +38,13 @@ interface TrackAndReleaseState<T> {
 	sourceQuery?: Query<T, T>;
 }
 
-const instanceStateMap = new Map<TrackAndReleaseStore<any, any, any, any>, TrackAndReleaseState<any>>();
+const instanceStateMap = new Map<TrackableStore<any, any, any, any>, TrackableState<any>>();
 
-type TrackAndReleaseSubCollection<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> =
-	ObservableStore<T, O, U> & TrackAndReleaseMixin<T, O, U, C> & SubcollectionStore<T, O, U, ObservableStore<T, O, U> & C & TrackAndReleaseMixin<T, O, U, C>>;
+interface TrackableSubCollection<
+	T, O extends CrudOptions, U extends UpdateResults<T>, C extends ObservableStore<T, O, U>
+> extends ObservableStore<T, O, U>, SubcollectionStore<T, O, U, C>, TrackableMixin<T, O, U, C> {}
 
-function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>>(state: TrackAndReleaseState<T>, store: Store<T, O, U>) {
+function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>>(state: TrackableState<T>, store: Store<T, O, U>) {
 	return function(update: StoreDelta<T>) {
 		const removedFromTracked: { item: T; id: string; previousIndex: number; }[] = [];
 		const addedToTracked: { item: T; id: string; index: number; }[] = [];
@@ -70,14 +70,22 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 
 		let newDataPromise: Promise<T[]>;
 
-		if (state.sourceQuery && !state.sourceQuery.incremental) {
+		if (update.afterAll) {
+			newDataPromise = Promise.resolve(
+				state.sourceQuery ? state.sourceQuery.apply(update.afterAll) : update.afterAll
+			);
+		}
+		else if (state.sourceQuery && !state.sourceQuery.incremental) {
 			newDataPromise = store.fetch();
-		} else {
+		}
+		else {
 			let newData = state.localData.slice().concat(update.adds);
 
 			store.identify(update.updates).forEach(function(id, index) {
 				if (state.idToIndex.has(id)) {
 					newData[state.idToIndex.get(id)] = update.updates[index];
+				} else {
+					newData.push(update.updates[index]);
 				}
 			});
 
@@ -86,7 +94,7 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 			});
 
 			if (state.sourceQuery) {
-				newData = state.sourceQuery.apply(newData);
+				newDataPromise = Promise.resolve(state.sourceQuery.apply(newData));
 			}
 		}
 
@@ -141,17 +149,9 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 				}
 			});
 
-			const idSet = new Set(updateAndAddIds);
-			state.idToIndex.forEach(function(previousIndex, id) {
-				if (!idSet.has(id) && !newIndex.has(id)) {
-					removedFromTracked.push({
-						item: state.localData[previousIndex],
-						previousIndex: previousIndex,
-						id: id
-					});
-				}
-			});
 			const trackedUpdate: TrackedStoreDelta<T> = {
+				beforeAll: state.localData,
+				afterAll: newData,
 				updates: trackedUpdates,
 				adds: trackedAdds,
 				deletes: trackedDeletes,
@@ -160,41 +160,48 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 				addedToTracked: addedToTracked
 			};
 
-			state.observers.forEach(function(observer) {
-				observer.next(trackedUpdate);
-			});
+			// Don't send an update if nothing happened withing the scope of this tracked.
+			if (trackedUpdates.length || trackedAdds.length || trackedDeletes.length || removedFromTracked.length ||
+			movedInTracked.length || addedToTracked.length
+			) {
+				state.localData = newData;
+				state.idToIndex = newIndex;
+				state.observers.forEach(function(observer) {
+					observer.next(trackedUpdate);
+				});
 
-			state.toRemoveIndices.sort().reverse().forEach(function(index) {
-				state.observers.splice(index, 1);
-			});
+				state.toRemoveIndices.sort().reverse().forEach(function(index) {
+					state.observers.splice(index, 1);
+				});
 
-			state.toRemoveIndices = [];
+				state.toRemoveIndices = [];
+			}
 		});
 	};
 }
-function createTrackAndReleaseMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends ObservableStore<T, O, U>>(): ComposeMixinDescriptor<
+function createTrackableMixin<T, O extends CrudOptions, U extends UpdateResults<T>, C extends ObservableStore<T, O, U>>(): ComposeMixinDescriptor<
 	ObservableStore<T, O, U> & SubcollectionStore<T, O, U, any>,
 	SubcollectionOptions<T, O, U>,
-	TrackAndReleaseMixin<T, O, U, C>,
-	TrackAndReleaseOptions<T>
+	TrackableMixin<T, O, U, C>,
+	TrackableOptions<T>
 > {
 
-	const trackAndReleaseMixin: TrackAndReleaseMixin<T, O, U, C> = {
-		track(this: TrackAndReleaseSubCollection<T, O, U, TrackedObservableStoreMixin<T> & C>) {
+	const TrackableMixin: TrackableMixin<T, O, U, C> = {
+		track(this: TrackableSubCollection<T, O, U, TrackedObservableStoreMixin<T> & C>) {
 			return this.createSubcollection({
 				isTracking: true
 			});
 		},
 
-		release(this: TrackAndReleaseSubCollection<T, O, U, C>) {
+		release(this: TrackableSubCollection<T, O, U, C>) {
 			return this.createSubcollection({
 				isTracking: false
 			});
 		}
 	};
 	return {
-		mixin: trackAndReleaseMixin,
-		initialize: function(instance: TrackAndReleaseSubCollection<T, O, U, C>, options?: TrackAndReleaseOptions<T>) {
+		mixin: TrackableMixin,
+		initialize: function(instance: TrackableSubCollection<T, O, U, C>, options?: TrackableOptions<T>) {
 			options = options || {};
 			instanceStateMap.set(instance, {
 				isTracking: Boolean(options.isTracking),
@@ -227,9 +234,9 @@ function createTrackAndReleaseMixin<T, O extends CrudOptions, U extends UpdateRe
 		aspectAdvice: {
 			around: {
 				observe(observe: (idOrIds?: string | string[]) => Observable<StoreDelta<T>> | Observable<ItemUpdate<T>>) {
-					return function(this: TrackAndReleaseSubCollection<T, O, U, C>, idOrIds?: string | string[]) {
-						if (idOrIds) {
-							return observe(idOrIds);
+					return function(this: TrackableSubCollection<T, O, U, C>, idOrIds?: string | string[]) {
+						if (idOrIds || !instanceStateMap.get(this).isTracking) {
+							return observe.call(this, idOrIds);
 						} else {
 							return instanceStateMap.get(this).observable;
 						}
@@ -240,4 +247,4 @@ function createTrackAndReleaseMixin<T, O extends CrudOptions, U extends UpdateRe
 	};
 }
 
-export default createTrackAndReleaseMixin;
+export default createTrackableMixin;

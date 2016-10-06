@@ -171,6 +171,7 @@ const createStore: StoreFactory = compose<Store<{}, {}, any>, StoreOptions<{}, {
 	if (data) {
 		instance.add(data);
 	}
+
 });
 
 export default createStore;
