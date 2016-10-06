@@ -10,15 +10,19 @@ import { createSort } from '../../../src/query/Sort';
 import createCompoundQuery from '../../../src/query/createQuery';
 import { createData, ItemType, createUpdates, patches } from '../support/createData';
 
+function getStoreAndDfd(test: any, data = createData()) {
+	const dfd = test.async(1000);
+	const store = createStore( { data: data } );
+	const emptyStore = createStore();
+
+	return { dfd, store, emptyStore, data: createData() };
+}
+
 registerSuite({
 	name: 'createStore',
 
 	'initialize store'(this: any) {
-		const dfd = this.async(1000);
-		const data = createData();
-		const store = createStore({
-			data: data
-		});
+		const { dfd, store, data } = getStoreAndDfd(this);
 
 		store.fetch().then(dfd.callback(function(fetchedData: ItemType[]) {
 			assert.deepEqual(fetchedData, data, 'Fetched data didn\'t match provided data');
@@ -28,9 +32,7 @@ registerSuite({
 	'basic operations': {
 		'add': {
 			'should add new items'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
-				const store = createStore();
+				const { dfd, emptyStore: store, data } = getStoreAndDfd(this);
 				// Add items
 				store.add([ data[0], data[1] ]);
 				store.add(data[2]);
@@ -40,12 +42,9 @@ registerSuite({
 			},
 
 			'add action with existing items should fail'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
+				const { dfd, store } = getStoreAndDfd(this);
 				const updates = createUpdates();
-				const store = createStore({
-					data: data
-				});
+
 				store.add(updates[0][2]).then().catch(function (error: any) {
 					assert.equal(error.message, 'Objects already exist in store',
 						'Didn\'t reject with appropriate error message');
@@ -53,12 +52,8 @@ registerSuite({
 			},
 
 			'add action with rejectOverwrite: false in options should overwrite existing data': function(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
+				const { dfd, store } = getStoreAndDfd(this);
 				const updates = createUpdates();
-				const store = createStore({
-					data: data
-				});
 				// Update items with add
 				store.add(updates[0][2], { rejectOverwrite: false }).then(function(items) {
 					assert.deepEqual(items, [ updates[0][2] ], 'Didn\'t successfully return item');
@@ -67,9 +62,7 @@ registerSuite({
 		},
 		'put': {
 			'should add new items'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
-				const store =  createStore();
+				const { dfd, data, emptyStore: store } = getStoreAndDfd(this);
 				// Add items with put
 				store.put([ data[0], data[1] ]);
 				store.put(data[2]);
@@ -79,12 +72,8 @@ registerSuite({
 			},
 
 			'should update existing items'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
+				const { dfd, store } = getStoreAndDfd(this);
 				const updates = createUpdates();
-				const store = createStore({
-					data: data
-				});
 				// Add items with put
 				store.put([ updates[0][0], updates[0][1] ]);
 				store.put(updates[0][2]);
@@ -96,11 +85,7 @@ registerSuite({
 
 		'patch': {
 			'should allow patching with a single update'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
-				const store = createStore({
-					data: data
-				});
+				const { dfd, store } = getStoreAndDfd(this);
 				store.patch(patches[0]);
 				store.fetch().then(function(storeData) {
 					assert.deepEqual(storeData[0], patches[0].patch.apply(createData()[0]),
@@ -109,12 +94,7 @@ registerSuite({
 			},
 
 			'should allow patching with an array'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
-				const store = createStore({
-					data: data
-				});
-				const copy = createData();
+				const { dfd, store, data: copy } = getStoreAndDfd(this);
 				store.patch(patches);
 				store.fetch().then(function(storeData) {
 					assert.deepEqual(storeData, patches.map((patchObj, i) => patchObj.patch.apply(copy[i])),
@@ -123,16 +103,11 @@ registerSuite({
 			},
 
 			'should allow patching with a Map'(this: any) {
-				const dfd = this.async(1000);
-				const data = createData();
-				const store = createStore({
-					data: data
-				});
+				const { dfd, store, data: copy } = getStoreAndDfd(this);
 
 				const map = new Map<string, Patch<ItemType, ItemType>>();
 				patches.forEach(patch => map.set(patch.id, patch.patch));
 
-				const copy = createData();
 				store.patch(map);
 				store.fetch().then(function(storeData) {
 					assert.deepEqual(storeData, patches.map((patchObj, i) => patchObj.patch.apply(copy[i])),
@@ -144,11 +119,7 @@ registerSuite({
 
 	'fetch': {
 		'should fetch with sort applied'(this: any) {
-			const dfd = this.async(1000);
-			const data = createData();
-			const store = createStore({
-				data: data
-			});
+			const { dfd, store, data } = getStoreAndDfd(this);
 
 			store.fetch(createSort<ItemType>('id', true))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
@@ -157,11 +128,7 @@ registerSuite({
 		},
 
 		'should fetch with filter applied'(this: any) {
-			const dfd = this.async(1000);
-			const data = createData();
-			const store = createStore({
-				data: data
-			});
+			const { dfd, store, data } = getStoreAndDfd(this);
 
 			store.fetch(createFilter<ItemType>().lessThan('value', 2))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
@@ -170,11 +137,7 @@ registerSuite({
 		},
 
 		'should fetch with range applied'(this: any) {
-			const dfd = this.async(1000);
-			const data = createData();
-			const store = createStore({
-				data: data
-			});
+			const { dfd, store, data } = getStoreAndDfd(this);
 
 			store.fetch(createRange<ItemType>(1, 2))
 				.then(dfd.callback(function(fetchedData: ItemType[]) {
@@ -183,11 +146,7 @@ registerSuite({
 		},
 
 		'should fetch with CompoundQuery applied'(this: any) {
-			const dfd = this.async(1000);
-			const data = createData();
-			const store = createStore({
-				data: data
-			});
+			const { dfd, store, data } = getStoreAndDfd(this);
 
 			store.fetch(
 				createCompoundQuery({
@@ -205,11 +164,9 @@ registerSuite({
 	},
 
 	'crud operations should return an observable': function(this: any) {
-		const dfd = this.async(1000);
 		const data = createData();
-		const store = createStore({
-			data: [ data[0] ]
-		});
+		const { dfd, store } = getStoreAndDfd(this, [data[0]]);
+
 		store.add(data[1]).subscribe(function(updateResults) {
 			assert.equal(updateResults.type, StoreOperation.Add, 'Update results had wrong type');
 			assert.deepEqual(updateResults.successfulData, [ data[1] ], 'Update results had wrong item');
@@ -231,7 +188,7 @@ registerSuite({
 		});
 	},
 
-	'should allow a property or function to be specified as the id': function() {
+	'should allow a property or function to be specified as the id': function(this: any) {
 		const data = createData();
 		const updates = createUpdates();
 		const store = createStore({
@@ -244,7 +201,54 @@ registerSuite({
 		});
 
 		assert.deepEqual(store.identify(updates[0]), [2, 3, 4], 'Should have used value property as the id');
-		assert.deepEqual(idFunctionStore.identify(data), ['1-id', '2-id', '3-id'],
-			'Should have used id function to create item ids');
+		assert.deepEqual(idFunctionStore.identify(data), ['1-id', '2-id', '3-id'], 'Should have used id function to create item ids');
+	},
+
+	'should execute calls in order in which they are called'(this: any) {
+		const { dfd, data, emptyStore: store } = getStoreAndDfd(this);
+		const updates = createUpdates();
+		let retrievalCount = 0;
+
+		store.add(data[0]);
+		store.get(data[0].id).then(([ item ]) => {
+			retrievalCount++;
+			try {
+				assert.deepEqual(item, data[0], 'Should have received initial item');
+			} catch (e) {
+				dfd.reject(e);
+			}
+		});
+		store.put(updates[0][0]);
+		store.get(data[0].id).then(([ item ]) => {
+			retrievalCount++;
+			try {
+				assert.deepEqual(item, updates[0][0], 'Should have received updated item');
+			} catch (e) {
+				dfd.reject(e);
+			}
+		});
+
+		store.put(updates[1][0]);
+		store.get(data[0].id).then(([ item ]) => {
+			try {
+				assert.equal(retrievalCount, 2, 'Didn\'t perform gets in order');
+				assert.deepEqual(item, updates[1][0], 'Should have received second updated item');
+			} catch (e) {
+				dfd.reject(e);
+			}
+			dfd.resolve();
+		});
+	},
+
+	'should generate unique ids': function(this: any) {
+		const ids: Promise<string>[] = [];
+		const store =  createStore();
+		const generateNIds = 100000;
+		for (let i = 0; i < generateNIds; i++) {
+			ids.push(store.createId());
+		}
+		Promise.all(ids).then(function(ids) {
+			assert.equal(new Set(ids).size, generateNIds, 'Not all generated IDs were unique');
+		});
 	}
 });
