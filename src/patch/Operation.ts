@@ -29,7 +29,7 @@ function navigatePath(target: any, path: JsonPointer) {
 	pathSegments.forEach(
 		function(segment, index) {
 			currentPath += `/${segment}`;
-			if (typeof target === 'undefined') {
+			if (!target) {
 				throw new Error(`Invalid path: ${currentPath} doesn't exist in target`);
 			}
 			else if (index + 1 < pathSegments.length) {
@@ -63,7 +63,7 @@ function remove(this: Remove, target: any) {
 
 function replace(this: Replace, target: any) {
 	const applyTo = navigatePath(target, this.path);
-	if (typeof applyTo.object[applyTo.property] === 'undefined') {
+	if (!(applyTo.property in applyTo.object)) {
 		throw new Error(`Cannot replace undefined path: ${this.path.toString()} on object`);
 	}
 	applyTo.object[applyTo.property] = this.value;
@@ -73,7 +73,7 @@ function replace(this: Replace, target: any) {
 
 function copyOrMove(from: JsonPointer, to: JsonPointer, target: any, toDelete: boolean) {
 	const moveFrom = navigatePath(target, from);
-	if (typeof moveFrom.object[moveFrom.property] === 'undefined') {
+	if (!(moveFrom.property in moveFrom.object)) {
 		throw new Error(`Cannot move from undefined path: ${from.toString()} on object`);
 	}
 

@@ -25,7 +25,7 @@ export interface TrackAndReleaseMixin<T, O extends CrudOptions, U extends Update
 
 export type TrackAndReleaseStore<T, O extends CrudOptions, U extends UpdateResults<T>, C extends Store<T, O, U>> = TrackAndReleaseMixin<T, O, U, C> & C;
 
-interface TrackAndReleaseOptions<T> {
+export interface TrackAndReleaseOptions<T> {
 	isTracking?: boolean;
 	sourceQuery?: Query<T, T>;
 }

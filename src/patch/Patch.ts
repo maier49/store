@@ -22,7 +22,7 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 
 	fromKeys.forEach(function(key) {
 		if (!isEqual(from[key], to[key])) {
-			if (typeof from[key] !== 'undefined' && typeof to[key] === 'undefined') {
+			if ((key in from) && !(key in to)) {
 				operations.push(createOperation(OperationType.Remove, startingPath.push(key)));
 			}
 			else if (shouldRecurseInto(from[key]) && shouldRecurseInto(to[key])) {
@@ -35,7 +35,7 @@ function _diff(from: any, to: any, startingPath?: JsonPointer): Operation[] {
 	});
 
 	toKeys.forEach(function(key) {
-		if (typeof from[key] === 'undefined' && typeof to[key] !== 'undefined') {
+		if (!(key in from) && (key in to)) {
 			operations.push(createOperation(OperationType.Add, startingPath.push(key), to[key]));
 		}
 	});

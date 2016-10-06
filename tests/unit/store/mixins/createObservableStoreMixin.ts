@@ -1,6 +1,5 @@
 import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
-
 import createObservableStoreMixin, {
 	ObservableStore, ObservableStoreOptions, StoreDelta,
 	ItemUpdate
@@ -20,26 +19,28 @@ interface ObservableSubcollectionStoreFactory extends ComposeFactory<Subcollecti
 	<T, O extends CrudOptions, U extends UpdateResults<T>>(options?: SubcollectionOptions<T, O, U> & ObservableStoreOptions<T, O>): SubcollectionStore<T, O, U, ObservableStore<T, O, U>>;
 }
 
+const createObservableStore: ObservableStoreFactory = createStore
+	.mixin(createObservableStoreMixin());
+
+function getStoreAndDfd(test: any) {
+	const dfd = test.async(1000);
+	const observableStore: ObservableStore<ItemType, CrudOptions, UpdateResults<ItemType>> = createObservableStore( { data: createData() } );
+	const emptyObservableStore = createObservableStore();
+
+	return { dfd, observableStore, emptyObservableStore, data: createData() };
+}
+
 registerSuite({
 	name: 'observableStoreMixin',
 
 	'with basic store': (function() {
-		const createObservableStore: ObservableStoreFactory = createStore
-			.mixin(createObservableStoreMixin());
-		let observableStore: ObservableStore<ItemType, CrudOptions, UpdateResults<ItemType>>;
 		const ids = createData().map(function(item) {
 			return item.id;
 		});
 		return {
-			beforeEach: function() {
-				observableStore = createObservableStore({
-					data: createData()
-				});
-			},
-
-			'can observe whole store': {
+			'should be able to observe the whole store': {
 				put(this: any) {
-					const dfd = this.async(1000);
+					const { dfd, observableStore } = getStoreAndDfd(this);
 					const updates = createUpdates();
 					observableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
 						assert.deepEqual(update, {
@@ -54,7 +55,7 @@ registerSuite({
 				},
 
 				patch(this: any) {
-					const dfd = this.async(1000);
+					const { dfd, observableStore } = getStoreAndDfd(this);
 					observableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
 						// Patch operate on the item itself in a memory store. This means that any references
 						// to that item will be updated immediately
@@ -70,9 +71,7 @@ registerSuite({
 				},
 
 				add(this: any) {
-					const dfd = this.async(1000);
-					const data = createData();
-					observableStore = createObservableStore<ItemType, CrudOptions, UpdateResults<ItemType>>();
+					const { dfd, emptyObservableStore: observableStore, data } = getStoreAndDfd(this);
 					observableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
 						assert.deepEqual(update, {
 							updates: [],
@@ -86,11 +85,12 @@ registerSuite({
 				},
 
 				delete(this: any) {
-					const dfd = this.async(1000);
+					const { dfd, observableStore } = getStoreAndDfd(this);
 					observableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
 						assert.deepEqual(update, {
 							updates: [],
 							deletes: [ ids[0] ],
+
 							beforeAll: undefined,
 							afterAll: undefined,
 							adds: []
@@ -100,10 +100,10 @@ registerSuite({
 				}
 			},
 
-			'can observe items by ids': {
+			'should be able to observe items by ids': {
 				'observing a single id': {
 					put(this: any) {
-						const dfd = this.async(1000);
+						const { dfd, observableStore } = getStoreAndDfd(this);
 						const updatedItem = createUpdates()[0][0];
 						let firstUpdate = true;
 						observableStore.observe(ids[0]).subscribe(function(update: ItemType) {
@@ -123,7 +123,7 @@ registerSuite({
 					},
 
 					patch(this: any) {
-						const dfd = this.async(1000);
+						const { dfd, observableStore } = getStoreAndDfd(this);
 						const patch = patches[0];
 						let firstUpdate = true;
 						observableStore.observe(ids[0]).subscribe(function(update: ItemType) {
@@ -139,7 +139,7 @@ registerSuite({
 					},
 
 					delete(this: any) {
-						const dfd = this.async(1000);
+						const { dfd, observableStore } = getStoreAndDfd(this);
 						let updatePassed = false;
 						let firstUpdate = true;
 						observableStore.observe(ids[0]).subscribe(function(update: ItemType) {
@@ -162,7 +162,7 @@ registerSuite({
 					}
 				},
 				'observing multiple ids': function(this: any) {
-					const dfd = this.async(1000);
+					const { dfd, observableStore } = getStoreAndDfd(this);
 					const data = createData();
 
 					let initialUpdate = 0;
@@ -182,60 +182,60 @@ registerSuite({
 							if (initialUpdate < 3) {
 								if (initialUpdate !== 1) {
 									assert.deepEqual(update, {
-											item: data[initialUpdate],
-											id: data[initialUpdate].id
-										}, 'Didn\'t send proper initial update'
-									);
+										item: data[initialUpdate],
+										id: data[initialUpdate].id
+									}, 'Didn\'t send proper initial update'
+													);
 								}
 								else {
 									// Special case for patched item
 									assert.deepEqual(update, {
-											item: patched,
-											id: patched.id
-										}, 'Didn\'t send proper update for patched data'
-									);
+										item: patched,
+										id: patched.id
+									}, 'Didn\'t send proper update for patched data'
+													);
 								}
 								initialUpdate++;
 								return;
 							}
 							if (!putUpdate) {
 								assert.deepEqual(update, {
-										item: put,
-										id: put.id
-									}, 'Didn\'t send the right update for put operation'
-								);
+									item: put,
+									id: put.id
+								}, 'Didn\'t send the right update for put operation'
+												);
 								putUpdate = true;
 							}
 							else if (!patchUpdate) {
 								assert.deepEqual(update, {
-										item: patched,
-										id: patched.id
-									}, 'Didn\'t send the right update for patch operation'
-								);
+									item: patched,
+									id: patched.id
+								}, 'Didn\'t send the right update for patch operation'
+												);
 								patchUpdate = true;
 							}
 							else if (!firstDelete) {
 								assert.deepEqual(update, {
-										item: null,
-										id: data[0].id
-									}, 'Didn\'t send the right update for first delete operation'
-								);
+									item: null,
+									id: data[0].id
+								}, 'Didn\'t send the right update for first delete operation'
+												);
 								firstDelete = true;
 							}
 							else if (!secondDelete) {
 								assert.deepEqual(update, {
-										item: null,
-										id: data[1].id
-									}, 'Didn\'t send the right update for second delete operation'
-								);
+									item: null,
+									id: data[1].id
+								}, 'Didn\'t send the right update for second delete operation'
+												);
 								secondDelete = true;
 							}
 							else if (!thirdDelete) {
 								assert.deepEqual(update, {
-										item: null,
-										id: data[2].id
-									}, 'Didn\'t send the right update for third delete operation'
-								);
+									item: null,
+									id: data[2].id
+								}, 'Didn\'t send the right update for third delete operation'
+												);
 								thirdDelete = true;
 							}
 							else {
@@ -256,6 +256,60 @@ registerSuite({
 					observableStore.delete([ ids[0], ids[1] ]);
 					observableStore.delete(ids[2]);
 				}
+			},
+
+			'should receive an update when subscribed before initial items are stored'(this: any) {
+				const { dfd, emptyObservableStore: observableStore, data } = getStoreAndDfd(this);
+
+				observableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
+					assert.deepEqual(update.adds, data, 'Should have received an update for all three items added');
+				}));
+				observableStore.add(data);
+			},
+
+			'should not receive an update when subscribed after initial items were stored'(this: any) {
+				const { dfd, observableStore } = getStoreAndDfd(this);
+				const updateData = createUpdates()[0][2];
+
+				observableStore.fetch().then(function(data: ItemType[]) {
+					try {
+						assert.isTrue(data.length > 0, 'initial items should have been stored.');
+					} catch (e) {
+						dfd.reject(e);
+					}
+
+					observableStore.observe().subscribe(function(update: StoreDelta<ItemType>) {
+						try {
+							assert.isTrue(update.adds.length === 0, 'Should not receive initial adds made before subscription');
+							assert.deepEqual(update.updates, [updateData], 'Should only receive updates made after subscription');
+							dfd.resolve();
+						} catch (e) {
+							dfd.reject(e);
+						}
+					});
+
+					observableStore.put(updateData);
+				});
+			},
+
+			'should not allow observing on non-existing ids'(this: any) {
+				const { dfd, observableStore, data } = getStoreAndDfd(this);
+				const idNotExist = '4';
+
+				observableStore.observe(idNotExist).subscribe(function success() {
+					dfd.reject(new Error('Should not call success callback.'));
+				}, function error() {
+					dfd.resolve();
+				});
+			},
+
+			'should overwrite dirty data by default'(this: any) {
+				const { dfd, observableStore, data } = getStoreAndDfd(this);
+				const updates = createUpdates();
+				observableStore.put(updates[0][0]);
+				observableStore.put(updates[1][0]).subscribe(dfd.callback(function(result: UpdateResults<ItemType>) {
+					assert.deepEqual(result.successfulData[0], updates[1][0], 'Should have taken the second update');
+				}));
 			}
 		};
 	})()

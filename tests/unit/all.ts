@@ -1,3 +1,6 @@
+import './patch/Patch';
+import './patch/Operation';
+import './patch/JsonPointer';
 import './query/filter';
 import './query/sort';
 import './store/createStore';

@@ -1,5 +1,5 @@
 import { Query, QueryType } from './createQuery';
-import JsonPointer, { createPointer, navigate } from '../patch/JsonPointer';
+import { createPointer, navigate } from '../patch/JsonPointer';
 import { shouldRecurseInto } from '../utils';
 
 interface Select<T extends U, U> extends Query<T, U> {
@@ -8,10 +8,7 @@ interface Select<T extends U, U> extends Query<T, U> {
 
 export default Select;
 
-function buildOperations(obj: any, key?: JsonPointer): Array<(to: any, from: any) => any> {
-	if (!key) {
-		key = createPointer();
-	}
+function buildOperations(obj: any, key = createPointer()): Array<(to: any, from: any) => any> {
 	const value: any = navigate(key, obj);
 	if (shouldRecurseInto(value)) {
 		return Object.keys(value).reduce(function(prev, next) {
