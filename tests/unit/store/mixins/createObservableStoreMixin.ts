@@ -303,29 +303,6 @@ registerSuite({
 				});
 			},
 
-			'should be able to get all updates by treating as a promise': {
-				'without conflicts': {
-					add(this: any) {
-						const { dfd, emptyObservableStore: observableStore, data } = getStoreAndDfd(this);
-						observableStore.add(data).then(function(result) {
-							assert.deepEqual(result, data, 'Should have returned all added items');
-						}).then(dfd.resolve);
-
-					},
-					put(this: any) {
-						const { dfd, observableStore, data } = getStoreAndDfd(this);
-						observableStore.put(data).then(function(result) {
-							assert.deepEqual(result, data, 'Should have returned all added items');
-						}).then(dfd.resolve);
-					},
-					patch() {
-					},
-					delete() {
-					}
-				}
-
-			},
-
 			'should overwrite dirty data by default'(this: any) {
 				const { dfd, observableStore, data } = getStoreAndDfd(this);
 				const updates = createUpdates();

@@ -18,6 +18,10 @@ function getStoreAndDfd(test: any, data = createData()) {
 	return { dfd, store, emptyStore, data: createData() };
 }
 
+const ids = createData().map(function(item) {
+	return item.id;
+});
+
 registerSuite({
 	name: 'createStore',
 
@@ -250,5 +254,55 @@ registerSuite({
 		Promise.all(ids).then(function(ids) {
 			assert.equal(new Set(ids).size, generateNIds, 'Not all generated IDs were unique');
 		});
+	},
+	'should be able to get all updates by treating as a promise': {
+		add(this: any) {
+			const { dfd, emptyStore: store, data } = getStoreAndDfd(this);
+			store.add(data).then(function(result) {
+				assert.deepEqual(result, data, 'Should have returned all added items');
+			}).then(dfd.resolve);
+
+		},
+		'add with conflicts should fail': function(this: any) {
+			const { dfd,  data } = getStoreAndDfd(this);
+			const store = createStore({
+				data: [ data[0], data[1] ]
+			});
+			store.add(data).then(dfd.reject, dfd.resolve);
+		},
+
+		put(this: any) {
+			const { dfd, store, data } = getStoreAndDfd(this);
+			store.put(data).then(function(result) {
+				assert.deepEqual(result, data, 'Should have returned all updated items');
+			}).then(dfd.resolve);
+		},
+		'put with conflicts should override': function(this: any) {
+			const { dfd,  data } = getStoreAndDfd(this);
+			const store = createStore({
+				data: [ data[0], data[1] ]
+			});
+			store.put(data).then(function(result) {
+				assert.deepEqual(result, data, 'Should have returned all updated items');
+			}).then(dfd.resolve);
+		},
+
+		patch(this: any) {
+			const { dfd, store, data } = getStoreAndDfd(this);
+			const expectedResult = data.map(function(item) {
+				item.value += 2;
+				item.nestedProperty.value += 2;
+				return item;
+			});
+			store.patch(patches).then(function(result) {
+				assert.deepEqual(result, expectedResult, 'Should have returned all patched items');
+			}).then(dfd.resolve);
+		},
+		delete(this: any) {
+			const { dfd, store, data } = getStoreAndDfd(this);
+			store.delete(ids).then(function(result) {
+				assert.deepEqual(result, ids, 'Should have returned all deleted ids');
+			}).then(dfd.resolve);
+		}
 	}
 });
