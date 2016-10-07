@@ -26,8 +26,12 @@ function getStoreAndDfd(test: any) {
 	const dfd = test.async(1000);
 	const observableStore: ObservableStore<ItemType, CrudOptions, UpdateResults<ItemType>> = createObservableStore( { data: createData() } );
 	const emptyObservableStore = createObservableStore();
+	const fetchingObservableStore: ObservableStore<ItemType, CrudOptions, UpdateResults<ItemType>> = createObservableStore( {
+		data: createData(),
+		fetchAroundUpdates: true
+	});
 
-	return { dfd, observableStore, emptyObservableStore, data: createData() };
+	return { dfd, observableStore, emptyObservableStore, data: createData(), fetchingObservableStore};
 }
 
 registerSuite({
@@ -97,6 +101,71 @@ registerSuite({
 						});
 					}));
 					observableStore.delete(ids[0]);
+				},
+
+				'with fetch around updates': {
+					put(this: any) {
+						const { dfd, fetchingObservableStore, data } = getStoreAndDfd(this);
+						const updates = createUpdates();
+						fetchingObservableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
+							assert.deepEqual(update, {
+								updates: [ updates[0][0] ],
+								deletes: [],
+								beforeAll: data,
+								afterAll: [ updates[0][0], data[1], data[2] ],
+								adds: []
+							}, 'Didn\'t send the proper update');
+						}));
+						fetchingObservableStore.put(updates[0][0]);
+					},
+
+					patch(this: any) {
+						const { dfd, fetchingObservableStore, data} = getStoreAndDfd(this);
+						patches[0].patch.apply(data[0]);
+						fetchingObservableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
+							// Patch operate on the item itself in a memory store. This means that any references
+							// to that item will be updated immediately
+							assert.deepEqual(update, {
+								updates: [ data[0] ],
+								deletes: [],
+								beforeAll: data,
+								afterAll: data,
+								adds: []
+							}, 'Didn\'t send the proper update');
+						}));
+						fetchingObservableStore.patch(patches[0]);
+					},
+
+					add(this: any) {
+						const { dfd, data } = getStoreAndDfd(this);
+						const fetchingObservableStore = createObservableStore({
+							fetchAroundUpdates: true
+						});
+						fetchingObservableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
+							assert.deepEqual(update, {
+								updates: [],
+								deletes: [],
+								beforeAll: [],
+								afterAll: [ data[0] ],
+								adds: [ data[0] ]
+							});
+						}));
+						fetchingObservableStore.add(data[0]);
+					},
+
+					delete(this: any) {
+						const { dfd, fetchingObservableStore, data } = getStoreAndDfd(this);
+						fetchingObservableStore.observe().subscribe(dfd.callback(function(update: StoreDelta<ItemType>) {
+							assert.deepEqual(update, {
+								updates: [],
+								deletes: [ ids[0] ],
+								beforeAll: data,
+								afterAll: [ data[1], data[2] ],
+								adds: []
+							});
+						}));
+						fetchingObservableStore.delete(ids[0]);
+					}
 				}
 			},
 

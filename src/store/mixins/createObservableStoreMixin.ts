@@ -52,7 +52,10 @@ export type ObservableStoreOptions<T, O extends CrudOptions> = ObservableStoreMi
 
 const instanceStateMap = new WeakMap<ObservableStoreMixin<any>, ObservableStoreState<any>>();
 
-function sendUpdates<T, O extends CrudOptions, U extends UpdateResults<T>>(this: ObservableStore<T, O, U>) {
+function sendUpdates<T, O extends CrudOptions, U extends UpdateResults<T>>(
+	this: ObservableStore<T, O, U>,
+	after: Promise<T[] | undefined>
+) {
 	const state = instanceStateMap.get(this);
 	function send(after?: T[]) {
 		const storeDelta: StoreDelta<T> = {
@@ -71,13 +74,9 @@ function sendUpdates<T, O extends CrudOptions, U extends UpdateResults<T>>(this:
 			state.observers.splice(removeIndex, 1);
 		});
 	}
-	if (state.fetchAroundUpdates) {
-		this.fetch().then(function(data: T[]) {
-			send(data);
-		});
-	} else {
-		send();
-	}
+	after.then(function(data?: T[]) {
+		send(data);
+	});
 }
 
 function isObserverEntry<T>(observer: Observer<T> | ObserverSetEntry<T>): observer is ObserverSetEntry<T> {
@@ -88,7 +87,12 @@ function isObserver<T>(observer: Observer<T> | ObserverSetEntry<T>): observer is
 	return !isObserverEntry(observer);
 }
 
-function notifyItemObservers<T, O extends CrudOptions, U extends UpdateResults<T>>(items: T[] | null, ids: string[], state: ObservableStoreState<T>, store: ObservableStore<T, O, U>) {
+function notifyItemObservers<T, O extends CrudOptions, U extends UpdateResults<T>>(
+	items: T[] | null,
+	ids: string[],
+	state: ObservableStoreState<T>,
+	store: ObservableStore<T, O, U>
+) {
 	function notify(id: string, after?: T) {
 		if (state.itemObservers.has(id)) {
 			state.itemObservers.get(id).map(function(observerOrEntry): Observer<ItemUpdate<T>> | null {
@@ -218,10 +222,17 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 					const self = this;
 					const state = instanceStateMap.get(self);
 
+					let fetchedDataPromise: Promise<T[] | undefined>;
+					if (state.fetchAroundUpdates) {
+						fetchedDataPromise = self.fetch();
+					}
+					else {
+						fetchedDataPromise = Promise.resolve(undefined);
+					}
 					result.then(function(updatedItems: T[]) {
 						notifyItemObservers(updatedItems, [], state, self);
 						state.updates = state.updates.concat(updatedItems);
-						state.scheduleUpdates(state, sendUpdates.bind(self));
+						state.scheduleUpdates(state, sendUpdates.bind(self, fetchedDataPromise));
 					});
 					return result;
 				},
@@ -230,10 +241,17 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 					const self = this;
 					const state = instanceStateMap.get(self);
 
+					let fetchedDataPromise: Promise<T[] | undefined>;
+					if (state.fetchAroundUpdates) {
+						fetchedDataPromise = self.fetch();
+					}
+					else {
+						fetchedDataPromise = Promise.resolve(undefined);
+					}
 					result.then(function(updatedItems: T[]) {
 						notifyItemObservers(updatedItems, [], state, self);
 						state.updates = state.updates.concat(updatedItems);
-						state.scheduleUpdates(state, sendUpdates.bind(self));
+						state.scheduleUpdates(state, sendUpdates.bind(self, fetchedDataPromise));
 					});
 					return result;
 				},
@@ -242,10 +260,18 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 					const self = this;
 					const state = instanceStateMap.get(self);
 					if (state) {
+						let fetchedDataPromise: Promise<T[] | undefined>;
+						if (state.fetchAroundUpdates) {
+							fetchedDataPromise = self.fetch();
+						}
+						else {
+							fetchedDataPromise = Promise.resolve(undefined);
+						}
+
 						result.then(function(addedItems: T[]) {
 							notifyItemObservers(addedItems, [], state, self);
 							state.adds = state.adds.concat(addedItems);
-							state.scheduleUpdates(state, sendUpdates.bind(self));
+							state.scheduleUpdates(state, sendUpdates.bind(self, fetchedDataPromise));
 						});
 					}
 					return result;
@@ -254,6 +280,14 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 				delete(this: ObservableStore<T, O, U>, result: StoreObservable<string, any>, ids: string | string[]) {
 					const self = this;
 					const state = instanceStateMap.get(self);
+
+					let fetchedDataPromise: Promise<T[] | undefined>;
+					if (state.fetchAroundUpdates) {
+						fetchedDataPromise = self.fetch();
+					}
+					else {
+						fetchedDataPromise = Promise.resolve(undefined);
+					}
 
 					result.then(function(deleted: string[]) {
 						notifyItemObservers(null, deleted, state, self);
@@ -274,7 +308,7 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 							}
 						});
 						state.deletes = state.deletes.concat(deleted);
-						state.scheduleUpdates(state, sendUpdates.bind(self));
+						state.scheduleUpdates(state, sendUpdates.bind(self, fetchedDataPromise));
 					});
 					return result;
 				}
@@ -301,9 +335,13 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 				storeObservable: storeObservable,
 				updates: [],
 				deletes: [],
-				adds: [],
-				beforeAll: options.fetchAroundUpdates ? [] : undefined
+				adds: []
 			};
+			if (options.fetchAroundUpdates) {
+				instance.fetch().then(function(data) {
+					state.beforeAll = data;
+				});
+			}
 
 			if (isSubcollectionStore(instance)) {
 				const subcollectionStore = <SubcollectionStore<any, any, any, any>> <any> instance;

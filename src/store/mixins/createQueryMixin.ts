@@ -106,7 +106,7 @@ function createQueryMixin<T, O extends CrudOptions, U extends UpdateResults<T>, 
 				fetch(this: QueryStore<T, O, U, C>, ...args: any[]) {
 					const state = instanceStateMap.get(this);
 					let query = <Query<T, T>> args[0];
-					if (state.sourceQuery) {
+					if (state && state.sourceQuery) {
 						if (query) {
 							const compoundQuery = state.sourceQuery.queryType === QueryType.Compound ?
 								<CompoundQuery<T, T>> state.sourceQuery : createCompoundQuery({ query: state.sourceQuery });

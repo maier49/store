@@ -73,7 +73,7 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<IdObject, 
 
 		fetch<V>(this: Storage<{}, {}>, query?: Query<{}, V>): Promise<V[]> {
 			const state = instanceStateMap.get(this);
-			return Promise.resolve(query ? query.apply(state.data) : state.data);
+			return Promise.resolve((query ? query.apply(state.data) : state.data).slice());
 		},
 
 		get(this: Storage<{}, {}>, ids: string[]): Promise<{}[]> {

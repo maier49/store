@@ -118,6 +118,23 @@ registerSuite({
 						'Should have patched all items');
 				}).then(dfd.resolve);
 			}
+		},
+		'delete': {
+			'should allow deleting a single item'(this: any) {
+				const { dfd, store, data: copy } = getStoreAndDfd(this);
+				store.delete(ids[0]);
+				store.fetch().then(dfd.callback(function(data: ItemType[]) {
+					assert.deepEqual(data, [copy[1], copy[2]], 'Didn\'t delete item');
+				}));
+			},
+
+			'should allow deleting multiple items'(this: any) {
+				const {dfd, store } = getStoreAndDfd(this);
+				store.delete(ids);
+				store.fetch().then(dfd.callback(function(data: ItemType[]) {
+					assert.deepEqual(data, [], 'Didn\'t delete items');
+				}));
+			}
 		}
 	},
 
