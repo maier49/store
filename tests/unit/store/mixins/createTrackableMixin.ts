@@ -11,6 +11,8 @@ import { ItemType, createData } from '../../support/createData';
 import { ObservableStore } from '../../../../src/store/mixins/createObservableStoreMixin';
 import { SubcollectionStore } from '../../../../src/store/createSubcollectionStore';
 import {ObservableStoreOptions} from '../../../../src/store/mixins/createObservableStoreMixin';
+import createOrderedOperationMixin from '../../../../src/store/mixins/createOrderedOperationMixin';
+import { StoreObservable } from '../../../../src/store/createStoreObservable';
 
 interface TrackableObservableQueryStore<T, O extends CrudOptions, U extends UpdateResults<T>> extends
 	ObservableStore<T, O, U>,
@@ -30,7 +32,8 @@ registerSuite(function() {
 	let createTrackbleQueryStore = createSubcollectionStore
 		.mixin(createObservableStoreMixin())
 		.mixin(createQueryMixin())
-		.mixin(createTrackableMixin()) as TrackableQueryStoreFactory;
+		.mixin(createTrackableMixin())
+		.mixin(createOrderedOperationMixin()) as TrackableQueryStoreFactory;
 	let trackableQueryStore: TrackableObservableQueryStore<ItemType, TrackableOptions<ItemType>, UpdateResults<ItemType>>;
 	return {
 		name: 'createTrackableMixin',
@@ -98,7 +101,7 @@ registerSuite(function() {
 				}
 			});
 
-			trackableQueryStore.delete('2').then(function() {
+			trackableQueryStore.delete('2').then<StoreObservable<ItemType, UpdateResults<ItemType>>>(function() {
 				return trackableQueryStore.add({ id: 'new', value: 10, nestedProperty: { value: 10 }});
 			}).then(function() {
 				// Shouldn't create a notification

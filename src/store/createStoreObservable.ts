@@ -10,7 +10,7 @@ export interface StoreObservable<T, U> extends Observable<U> {
 	then<V>(onFulfilled?: ((value?: T[]) => (V | Promise<V> | null | undefined)) | null | undefined, onRejected?: (reason?: Error) => void): Promise<V>;
 }
 
-export default function createStoreObservable<T, U>(observable: Observable<U>, transform?: (data: U) => T[]): StoreObservable<T, U> {
+export default function createStoreObservable<T, U>(observable: Observable<U>, transform: (data: U) => T[]): StoreObservable<T, U> {
 	const storeObservable = observable as StoreObservable<T, U>;
 	storeObservable.then = function<V>(onFulfilled?: ((value?: T[]) => (V | Promise<V> | null | undefined)) | null | undefined, onRejected?: (reason?: Error) => void): Promise<V> {
 		// Wrap in a shim promise because the interface that leaks through observable.toPromise is missing some

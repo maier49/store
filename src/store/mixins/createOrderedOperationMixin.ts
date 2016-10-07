@@ -5,64 +5,93 @@ import { Observer, Observable } from 'rxjs';
 import createStoreObservable from '../createStoreObservable';
 
 interface OrderedOperationState {
-	operationQueue: Promise<any>[];
+	operationQueue: Function[];
+	inProgress?: boolean;
 }
 
 const instanceStateMap = new WeakMap<{}, OrderedOperationState>();
 
-function queueStoreOperation(operation: Function, returnPromise?: boolean) {
+function processNext(state: OrderedOperationState) {
+	const operation = state.operationQueue.shift();
+	if (!operation) {
+		state.inProgress = false;
+		return;
+	}
+	const promiseOrObservable = operation();
+	if (promiseOrObservable.toPromise) {
+		promiseOrObservable.subscribe(
+			null,
+			function() {
+				processNext(state);
+			}, function() {
+				processNext(state);
+			}
+		);
+	}
+	else if (promiseOrObservable.then) {
+		promiseOrObservable.then(
+			function() {
+				processNext(state);
+			},
+			function() {
+				processNext(state);
+			});
+	}
+}
+function queueStoreOperation(operation: Function, returnsPromise?: boolean) {
 	return function(this: any, ...args: any[]) {
 		const store = this;
 		const state = instanceStateMap.get(store);
 		if (!state || this.source) {
 			return operation.apply(store, args);
 		}
-		let lastOperationFinished: Promise<any>;
-		if (state.operationQueue.length) {
-			lastOperationFinished = state.operationQueue[state.operationQueue.length - 1];
+		if (!state.inProgress) {
+			state.inProgress = true;
+			setTimeout(function() {
+				processNext(state);
+			});
 		}
-		else {
-			lastOperationFinished = Promise.resolve();
-		}
-		if (returnPromise) {
-			const operationPromise = lastOperationFinished.then(function() {
-				return operation.apply(store, args).then(function(results: any) {
-					state.operationQueue.splice(state.operationQueue.indexOf(operationPromise), 1);
-					return results;
+		if (returnsPromise) {
+			return new Promise(function(resolve, reject) {
+				state.operationQueue.push(function() {
+					return operation.apply(store, args).then(function(results: any) {
+						resolve(results);
+					}, function(error: any) {
+						reject(error);
+					});
 				});
 			});
-			state.operationQueue.push(operationPromise);
-
-			return operationPromise;
 		}
 		else {
-			let observable: Observable<any>;
-			return createStoreObservable(
-				new Observable<UpdateResults<{}>>(function subscribe(observer: Observer<UpdateResults<{}>>) {
-					if (!observable) {
-						const operationPromise = lastOperationFinished.then(function() {
-							return new Promise(function(resolve, reject) {
-								setTimeout(function() {
-									observable = operation.apply(store, args);
-									observable.subscribe(function onNext(next: any) {
-										observer.next(next);
-									}, function onError(error: any) {
-										observer.error(error);
-										reject(error);
-									}, function onComplete() {
-										observer.complete();
-										state.operationQueue.splice(state.operationQueue.indexOf(operationPromise), 1);
-										resolve();
-									});
-								});
-							});
-						});
-						state.operationQueue.push(operationPromise);
+			let pushed = false;
+			let observers: Observer<any>[] = [];
+			let operationObservable: Observable<any>;
+			const observable = createStoreObservable(
+				new Observable(function subscribe(observer: Observer<{}>) {
+					if (!operationObservable) {
+						observers.push(observer);
+					} else {
+						operationObservable.subscribe(observer);
 					}
-				}), function(updateResults: UpdateResults<{}>) {
+					if (!pushed) {
+						state.operationQueue.push(function() {
+							operationObservable = operation.apply(store, args);
+							observers.forEach(function(observer) {
+								operationObservable.subscribe(observer);
+							});
+							return operationObservable.toPromise();
+						});
+						pushed = true;
+					}
+
+					return () => observers.splice(observers.indexOf(observer), 1);
+				}),
+				function(updateResults: UpdateResults<{}>) {
 					return updateResults.successfulData;
 				}
 			);
+			observable.subscribe();
+			return observable;
 		}
 	};
 }

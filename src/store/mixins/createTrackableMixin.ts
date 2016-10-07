@@ -84,6 +84,8 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 			store.identify(update.updates).forEach(function(id, index) {
 				if (state.idToIndex.has(id)) {
 					newData[state.idToIndex.get(id)] = update.updates[index];
+				} else {
+					newData.push(update.updates[index]);
 				}
 			});
 

@@ -8,6 +8,7 @@ import createStore, { CrudOptions } from '../../../../src/store/createStore';
 import { UpdateResults } from '../../../../src/storage/createInMemoryStorage';
 import { ComposeFactory } from 'dojo-compose/compose';
 import { SubcollectionStore, SubcollectionOptions } from '../../../../src/store/createSubcollectionStore';
+import createOrderedOperationMixin from '../../../../src/store/mixins/createOrderedOperationMixin';
 
 interface ObservableStoreFactory extends ComposeFactory<ObservableStore<{}, {}, any>, ObservableStoreOptions<{}, {}>> {
 	<T, O extends CrudOptions, U extends UpdateResults<T>>(options?: ObservableStoreOptions<T, O>): ObservableStore<T, O, U>;
@@ -309,96 +310,97 @@ registerSuite({
 				observableStore.put(updates[1][0]).subscribe(dfd.callback(function(result: UpdateResults<ItemType>) {
 					assert.deepEqual(result.successfulData[0], updates[1][0], 'Should have taken the second update');
 				}));
-				// 'observing multiple ids with an ordered store': function(this: any) {
-				// 	const dfd = this.async(1000);
-				// 	const data = createData();
-				//
-				// 	let initialUpdate = 0;
-				//
-				// 	let putUpdate = false;
-				// 	const put = createUpdates()[0][0];
-				//
-				// 	let patchUpdate = false;
-				// 	const patched = patches[1].patch.apply(createData()[1]);
-				// 	const patch = patches[1];
-				//
-				// 	let firstDelete = false;
-				// 	let secondDelete = false;
-				// 	let thirdDelete = false;
-				// 	const observableStore = createObservableStore
-				// 		.mixin(createOrderedOperationMixin())({
-				// 		data: createData()
-				// 	});
-				// 	observableStore.observe(ids).subscribe(function(update: ItemUpdate<ItemType>) {
-				// 		try {
-				// 			if (initialUpdate < 3) {
-				// 				// No special case because patch happens after add
-				// 				assert.deepEqual(update, {
-				// 						item: data[initialUpdate],
-				// 						id: data[initialUpdate].id
-				// 					}, 'Didn\'t send proper initial update'
-				// 				);
-				// 				initialUpdate++;
-				// 				return;
-				// 			}
-				// 			if (!putUpdate) {
-				// 				assert.deepEqual(update, {
-				// 						item: put,
-				// 						id: put.id
-				// 					}, 'Didn\'t send the right update for put operation'
-				// 				);
-				// 				putUpdate = true;
-				// 			}
-				// 			else if (!patchUpdate) {
-				// 				assert.deepEqual(update, {
-				// 						item: patched,
-				// 						id: patched.id
-				// 					}, 'Didn\'t send the right update for patch operation'
-				// 				);
-				// 				patchUpdate = true;
-				// 			}
-				// 			else if (!firstDelete) {
-				// 				assert.deepEqual(update, {
-				// 						item: null,
-				// 						id: data[0].id
-				// 					}, 'Didn\'t send the right update for first delete operation'
-				// 				);
-				// 				firstDelete = true;
-				// 			}
-				// 			else if (!secondDelete) {
-				// 				assert.deepEqual(update, {
-				// 						item: null,
-				// 						id: data[1].id
-				// 					}, 'Didn\'t send the right update for second delete operation'
-				// 				);
-				// 				secondDelete = true;
-				// 			}
-				// 			else if (!thirdDelete) {
-				// 				assert.deepEqual(update, {
-				// 						item: null,
-				// 						id: data[2].id
-				// 					}, 'Didn\'t send the right update for third delete operation'
-				// 				);
-				// 				thirdDelete = true;
-				// 			}
-				// 			else {
-				// 				throw Error('Shouldn\'t have received another update');
-				// 			}
-				//
-				// 		} catch (error) {
-				// 			dfd.reject(error);
-				// 		}
-				// 	}, null, dfd.callback(function() {
-				// 		assert.isTrue(
-				// 			putUpdate && patchUpdate && firstDelete && secondDelete && thirdDelete,
-				// 			'Didn\'t send all updates before completing observable'
-				// 		);
-				// 	}));
-				// 	observableStore.put(put);
-				// 	observableStore.patch(patch);
-				// 	observableStore.delete([ ids[0], ids[1] ]);
-				// 	observableStore.delete(ids[2]);
-				// }
+			},
+
+			'observing multiple ids with an ordered store': function(this: any) {
+				const dfd = this.async(1000);
+				const data = createData();
+
+				let initialUpdate = 0;
+
+				let putUpdate = false;
+				const put = createUpdates()[0][0];
+
+				let patchUpdate = false;
+				const patched = patches[1].patch.apply(createData()[1]);
+				const patch = patches[1];
+
+				let firstDelete = false;
+				let secondDelete = false;
+				let thirdDelete = false;
+				const observableStore = createObservableStore
+					.mixin(createOrderedOperationMixin())({
+						data: createData()
+					});
+				observableStore.observe(ids).subscribe(function(update: ItemUpdate<ItemType>) {
+					try {
+						if (initialUpdate < 3) {
+							// No special case because patch happens after add
+							assert.deepEqual(update, {
+									item: data[initialUpdate],
+									id: data[initialUpdate].id
+								}, 'Didn\'t send proper initial update'
+							);
+							initialUpdate++;
+							return;
+						}
+						if (!putUpdate) {
+							assert.deepEqual(update, {
+									item: put,
+									id: put.id
+								}, 'Didn\'t send the right update for put operation'
+							);
+							putUpdate = true;
+						}
+						else if (!patchUpdate) {
+							assert.deepEqual(update, {
+									item: patched,
+									id: patched.id
+								}, 'Didn\'t send the right update for patch operation'
+							);
+							patchUpdate = true;
+						}
+						else if (!firstDelete) {
+							assert.deepEqual(update, {
+									item: null,
+									id: data[0].id
+								}, 'Didn\'t send the right update for first delete operation'
+							);
+							firstDelete = true;
+						}
+						else if (!secondDelete) {
+							assert.deepEqual(update, {
+									item: null,
+									id: data[1].id
+								}, 'Didn\'t send the right update for second delete operation'
+							);
+							secondDelete = true;
+						}
+						else if (!thirdDelete) {
+							assert.deepEqual(update, {
+									item: null,
+									id: data[2].id
+								}, 'Didn\'t send the right update for third delete operation'
+							);
+							thirdDelete = true;
+						}
+						else {
+							throw Error('Shouldn\'t have received another update');
+						}
+
+					} catch (error) {
+						dfd.reject(error);
+					}
+				}, null, dfd.callback(function() {
+					assert.isTrue(
+						putUpdate && patchUpdate && firstDelete && secondDelete && thirdDelete,
+						'Didn\'t send all updates before completing observable'
+					);
+				}));
+				observableStore.put(put);
+				observableStore.patch(patch);
+				observableStore.delete([ ids[0], ids[1] ]);
+				observableStore.delete(ids[2]);
 			}
 		};
 	})()
