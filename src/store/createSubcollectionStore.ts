@@ -76,7 +76,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, ids: string | string[]) {
 						if (this.source) {
 							return this.source.get(ids);
-						} else {
+						}
+						else {
 							return get.call(this, ids);
 						}
 					};
@@ -86,7 +87,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, items: {} | {}[], options?: CrudOptions) {
 						if (this.source) {
 							return this.source.add(items, options);
-						} else {
+						}
+						else {
 							return add.call(this, items, options);
 						}
 					};
@@ -106,7 +108,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, items: {} | {}[], options?: CrudOptions) {
 						if (this.source) {
 							return this.source.put(items, options);
-						} else {
+						}
+						else {
 							return put.call(this, items, options);
 						}
 					};
@@ -116,7 +119,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, updates: PatchArgument<{}>, options?: CrudOptions) {
 						if (this.source) {
 							return this.source.patch(updates, options);
-						} else {
+						}
+						else {
 							return patch.call(this, updates, options);
 						}
 					};
@@ -126,7 +130,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, query?: Query<{}, {}>) {
 						if (this.source) {
 							return this.source.fetch(query);
-						} else {
+						}
+						else {
 							return fetch.call(this, query);
 						}
 					};
@@ -136,7 +141,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, items: {} | {}[]) {
 						if (this.source) {
 							return this.source.identify(items);
-						} else {
+						}
+						else {
 							return identify.call(this, items);
 						}
 					};
@@ -146,7 +152,8 @@ const createSubcollectionStore: SubcollectionFactory = createStore
 					return function(this: SubcollectionStore<{}, {}, any, Store<{}, {}, any>>, items: {} | {}[]) {
 						if (this.source) {
 							return this.source.createId();
-						} else {
+						}
+						else {
 							return createId.call(this);
 						}
 					};

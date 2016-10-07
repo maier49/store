@@ -101,14 +101,16 @@ const createStore: StoreFactory = compose<Store<{}, {}, any>, StoreOptions<{}, {
 		let patchEntries: PatchMapEntry<{}, {}>[] = [];
 		if (Array.isArray(updates)) {
 			patchEntries = updates;
-		} else if (updates instanceof Map) {
+		}
+		else if (updates instanceof Map) {
 			updates.forEach(function(value, key) {
 				patchEntries.push({
 					id: key,
 					patch: value
 				});
 			});
-		} else {
+		}
+		else {
 			patchEntries = [ updates ];
 		}
 		const storeResultsPromise = instanceStateMap.get(self).storage

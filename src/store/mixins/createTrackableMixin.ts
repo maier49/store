@@ -63,7 +63,8 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 				});
 				state.idToIndex.delete(id);
 				return true;
-			} else {
+			}
+			else {
 				return false;
 			}
 		});
@@ -84,7 +85,8 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 			store.identify(update.updates).forEach(function(id, index) {
 				if (state.idToIndex.has(id)) {
 					newData[state.idToIndex.get(id)] = update.updates[index];
-				} else {
+				}
+				else {
 					newData.push(update.updates[index]);
 				}
 			});
@@ -136,7 +138,8 @@ function buildTrackedUpdate<T, O extends CrudOptions, U extends UpdateResults<T>
 				if (newIndex.has(id) && !state.idToIndex.has(id)) {
 					if (itemIndex < update.updates.length) {
 						trackedUpdates.push(update.updates[itemIndex]);
-					} else {
+					}
+					else {
 						trackedAdds.push(update.adds[itemIndex - update.updates.length]);
 					}
 					trackedAdds.push();
@@ -237,7 +240,8 @@ function createTrackableMixin<T, O extends CrudOptions, U extends UpdateResults<
 					return function(this: TrackableSubCollection<T, O, U, C>, idOrIds?: string | string[]) {
 						if (idOrIds || !instanceStateMap.get(this).isTracking) {
 							return observe.call(this, idOrIds);
-						} else {
+						}
+						else {
 							return instanceStateMap.get(this).observable;
 						}
 					};

@@ -70,7 +70,8 @@ function queueStoreOperation(operation: Function, returnsPromise?: boolean) {
 				new Observable(function subscribe(observer: Observer<{}>) {
 					if (!operationObservable) {
 						observers.push(observer);
-					} else {
+					}
+					else {
 						operationObservable.subscribe(observer);
 					}
 					if (!pushed) {

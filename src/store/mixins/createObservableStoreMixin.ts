@@ -98,7 +98,8 @@ function notifyItemObservers<T, O extends CrudOptions, U extends UpdateResults<T
 			state.itemObservers.get(id).map(function(observerOrEntry): Observer<ItemUpdate<T>> | null {
 				if (isObserverEntry(observerOrEntry)) {
 					return observerOrEntry.observer;
-				} else {
+				}
+				else {
 					return null;
 				}
 			}).filter(function(observerEntry) {
@@ -113,7 +114,8 @@ function notifyItemObservers<T, O extends CrudOptions, U extends UpdateResults<T
 				state.itemObservers.get(id).map(function(observerOrEntry): Observer<T> | null {
 					if (isObserver(observerOrEntry)) {
 						return observerOrEntry;
-					} else {
+					}
+					else {
 						return null;
 					}
 				}).filter(function(observer) {
@@ -129,7 +131,8 @@ function notifyItemObservers<T, O extends CrudOptions, U extends UpdateResults<T
 			const id = ids[index] || store.identify(after)[0];
 			notify(id, after);
 		});
-	} else {
+	}
+	else {
 		ids.forEach(function(id) {
 			notify(id, null);
 		});
@@ -178,7 +181,8 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 									ids.forEach(function(id: string) {
 										if (state.itemObservers.has(id)) {
 											state.itemObservers.get(id).push(observerEntry);
-										} else {
+										}
+										else {
 											state.itemObservers.set(id, [observerEntry]);
 										}
 									});
