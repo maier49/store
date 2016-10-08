@@ -310,7 +310,7 @@ trackedCollection.observe().subscribe(function(update) {
 
 Things to note about this example:  
 * The store in this example uses `QueryMixin`, and `TrackableMixin`, both of which are have methods that return `this` as the type. In order for `this` to match both of these interfaces, the `TrackableObservableQueryStore` interface, which extends both of these interfaces, needs to be created and used as the type of the store.
-* This example uses the `createOrderedOperationsMixin`. This is to ensure that operations on the store all happen sequentially, and updates are what we would expect. See the section on the [createOrderedOperationsMixin](#createOrderedOperationsMIxin) for more details.
+* This example uses the `createOrderedOperationsMixin`. This is to ensure that operations on the store all happen sequentially, and updates are what we would expect. See the section on the [createOrderedOperationsMixin](#createorderedoperationsmixin) for more details.
 
 ## createOrderedOperationsMixin
 `Store` provides a consistent, `Promise` and `Observable` based API for all store implementations. However, with the default storage implementation, some surprising results can occur, because while all operations return asynchronously, the underlying update happens synchronously as it is operating on local data. Specifically, calling `then` on a promise(or `StoreObservable`), will result in the provided callback being executed on the next tick, so in the following example, the second `put` command is executed before the `then` from the first is resolved.
