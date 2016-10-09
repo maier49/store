@@ -1,6 +1,6 @@
 import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
-import Filter, { createFilter, FilterType, BooleanOp} from '../../../src/query/Filter';
+import Filter, { createFilter, FilterType, BooleanOp, SimpleFilter } from '../../../src/query/Filter';
 import { createPointer } from '../../../src/patch/JsonPointer';
 
 type SimpleObj = { key: number; id: string };
@@ -119,6 +119,17 @@ registerSuite({
 			'notDeepEqualTo': function() {
 				assert.deepEqual(createFilter<NestedObj>().notDeepEqualTo('key', { key2: 5 }).apply(nestedList),
 					nestedList.slice(1), 'Not deep equal with string path')	;
+			},
+			'filterChain should keep all filters': function() {
+				const filters = createFilter<SimpleObj>().lessThan('key', 5).greaterThan('key', 10).filterChain;
+				assert.lengthOf(filters, 3);
+				assert.strictEqual(filters[1], BooleanOp.And);
+			},
+			'SimpleFilter should have an apply that can be used individually.': function() {
+				const filters = createFilter<SimpleObj>().lessThan('key', 5).filterChain;
+				const simpleFilter = <SimpleFilter<SimpleObj>> filters[0];
+
+				assert.deepEqual(simpleFilter.apply(simpleList), [ { key: 4, id: '3' } ]);
 			}
 		},
 
@@ -180,6 +191,11 @@ registerSuite({
 				assert.deepEqual(createFilter<NestedObj>().notDeepEqualTo(createPointer('key', 'key2'), 5).apply(nestedList),
 					nestedList.slice(1), 'Not deep equal with JSON path');
 			}
+		},
+
+		'custom'() {
+			assert.deepEqual(createFilter<SimpleObj>().custom((item: SimpleObj) => item.key === 4 ).apply(simpleList),
+					[ { key: 4, id: '3' } ], 'Not deep equal with custom filter');
 		}
 	},
 
@@ -246,6 +262,10 @@ registerSuite({
 
 	'serializing': {
 		'simple - no path': {
+			'empty filter': function() {
+				assert.strictEqual(createFilter().toString(), '', 'Didn\'t properly serialize empty filter');
+			},
+
 			'less than': function() {
 				assert.strictEqual(createFilter().lessThan('key', 3).toString(), 'lt(key, 3)',
 					'Didn\'t properly serialize less than');

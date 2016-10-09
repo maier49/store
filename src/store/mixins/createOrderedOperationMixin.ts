@@ -1,6 +1,8 @@
 import { UpdateResults } from '../../storage/createInMemoryStorage';
 import { Store, CrudOptions, StoreOptions } from '../createStore';
 import { ComposeMixinDescriptor } from 'dojo-compose/compose';
+import WeakMap from 'dojo-shim/WeakMap';
+import Promise from 'dojo-shim/Promise';
 import { Observer, Observable } from 'rxjs';
 import createStoreObservable from '../createStoreObservable';
 
@@ -23,7 +25,8 @@ function processNext(state: OrderedOperationState) {
 			null,
 			function() {
 				processNext(state);
-			}, function() {
+			},
+			function() {
 				processNext(state);
 			}
 		);

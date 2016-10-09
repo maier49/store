@@ -59,6 +59,7 @@ function flip<T>(comparator: (a: T, b: T) => number) {
 function serialize(sort: Sort<any>) {
 	return `Sort(${sort.comparatorOrProperty}, ${sort.descending ? '-' : '+'})`;
 }
+// the `a == null` check returns `true` when a is `null` or `undefined`.
 function sortValue(a: any, b: any) {
 	let comparison: number;
 	if (a == null && b == null) {

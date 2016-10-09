@@ -283,8 +283,9 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 			filterType = FilterType.Custom;
 			test = value;
 			break;
-		default:
-			return null;
+		// unreachable lines
+		// default:
+		// return null;
 	}
 	return {
 		test(item: T) {
@@ -310,7 +311,7 @@ function createComparator<T>(operator: FilterType, value: any, path?: ObjectPoin
 //// Default serialization function
 function serializeFilter(filter: Filter<any>): string {
 	let operator = '&';
-	if (filter.filterChain) {
+	if (filter.filterChain && filter.filterChain.length > 0) {
 		return filter.filterChain.reduce(function(prev: string, next: FilterChainMember<any>) {
 			if (isFilter(next)) {
 				const start = next.filterChain ? '(' : '';
@@ -328,6 +329,6 @@ function serializeFilter(filter: Filter<any>): string {
 		}, '');
 	}
 	else {
-		return filter.toString();
+		return '';
 	}
 }

@@ -230,6 +230,26 @@ registerSuite({
 						observableStore.delete(ids[0]);
 					}
 				},
+				'observing a single id multiple times'(this: any) {
+					const { dfd, observableStore } = getStoreAndDfd(this);
+					const updatedItem = createUpdates()[0][0];
+					let count = 0;
+					function next(update: ItemType) {
+						count++;
+						if (count <= 2) {
+							// skip initial updates.
+							return;
+						}
+						assert.deepEqual(update, updatedItem, 'Didn\'t send the correct update');
+						if (count === 4) {
+							dfd.resolve();
+						}
+					}
+
+					observableStore.observe(ids[0]).subscribe(next);
+					observableStore.observe(ids[0]).subscribe(next);
+					observableStore.put(updatedItem);
+				},
 				'observing multiple ids': function(this: any) {
 					const { dfd, observableStore } = getStoreAndDfd(this);
 					const data = createData();
@@ -324,7 +344,28 @@ registerSuite({
 					observableStore.patch(patch);
 					observableStore.delete([ ids[0], ids[1] ]);
 					observableStore.delete(ids[2]);
+				},
+				'observing multiple ids multiple times'(this: any) {
+					const { dfd, observableStore } = getStoreAndDfd(this);
+					const updatedItem = createUpdates()[0][0];
+					let count = 0;
+					function next(update: ItemUpdate<ItemType>) {
+						count++;
+						if (count <= 6) {
+							// skip initial updates.
+							return;
+						}
+						assert.deepEqual(update.item, updatedItem, 'Didn\'t send the correct update');
+						if (count === 8) {
+							dfd.resolve();
+						}
+					}
+
+					observableStore.observe(ids).subscribe(next);
+					observableStore.observe(ids).subscribe(next);
+					observableStore.put(updatedItem);
 				}
+
 			},
 
 			'should receive an update when subscribed before initial items are stored'(this: any) {
@@ -371,7 +412,17 @@ registerSuite({
 					dfd.resolve();
 				});
 			},
-
+			'should include non-existing ids in the error message.'(this: any) {
+				const { dfd, observableStore, data } = getStoreAndDfd(this);
+				const idNotExist = '4';
+				const idExisting = '2';
+				observableStore.observe([idExisting, idNotExist]).subscribe(
+					function success() {},
+					dfd.callback(function(error: Error) {
+						assert.isTrue(error.message.indexOf(idExisting) === -1, `${idExisting} should not be included in the error message`);
+						assert.isTrue(error.message.indexOf(idNotExist) !== -1, `${idNotExist} should be included in the error message`);
+					}));
+			},
 			'should overwrite dirty data by default'(this: any) {
 				const { dfd, observableStore, data } = getStoreAndDfd(this);
 				const updates = createUpdates();

@@ -60,6 +60,7 @@ const createStore: StoreFactory = compose<Store<{}, {}, any>, StoreOptions<{}, {
 		const self = this;
 		const storeResultsPromise = instanceStateMap.get(self).storage
 			.add(Array.isArray(items) ? items : [ items ], options);
+		// TODO refactoring - repetitive logic
 		return createStoreObservable(
 			new Observable<UpdateResults<{}>>(function subscribe(observer: Observer<UpdateResults<{}>>) {
 				storeResultsPromise

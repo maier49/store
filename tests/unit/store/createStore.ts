@@ -1,13 +1,18 @@
 import * as registerSuite from 'intern!object';
 import * as assert from 'intern/chai!assert';
+import * as sinon from 'sinon';
 import createStore, { StoreOperation } from '../../../src/store/createStore';
 import Patch from '../../../src/patch/Patch';
 import Map from 'dojo-shim/Map';
+import Promise from 'dojo-shim/Promise';
 import { createRange } from '../../../src/query/StoreRange';
 import { createFilter } from '../../../src/query/Filter';
 import { createPointer } from '../../../src/patch/JsonPointer';
+import { createPatch } from '../../../src/patch/Patch';
 import { createSort } from '../../../src/query/Sort';
+import { createOperation, OperationType } from '../../../src/patch/Operation';
 import createCompoundQuery from '../../../src/query/createQuery';
+import createInMemoryStorage from '../../../src/storage/createInMemoryStorage';
 import { createData, ItemType, createUpdates, patches } from '../support/createData';
 
 function getStoreAndDfd(test: any, data = createData()) {
@@ -55,7 +60,7 @@ registerSuite({
 				}).then(dfd.resolve);
 			},
 
-			'add action with rejectOverwrite: false in options should overwrite existing data': function(this: any) {
+			'add action with `rejectOverwrite=false` in options should overwrite existing data': function(this: any) {
 				const { dfd, store } = getStoreAndDfd(this);
 				const updates = createUpdates();
 				// Update items with add
@@ -84,6 +89,18 @@ registerSuite({
 				store.fetch().then(function(storeData) {
 					assert.deepEqual(storeData, updates[0], 'Didn\'t update items');
 				}).then(dfd.resolve);
+			},
+			'put action with existing items should fail with `rejectOverwrite=true`': function(this: any) {
+				const { dfd, store } = getStoreAndDfd(this);
+				const updates = createUpdates();
+				// Update existing items with put
+				store.put([ updates[0][0], updates[0][1] ], { rejectOverwrite: true }).then(
+					dfd.rejectOnError(function () {
+						assert(false, 'Should not have resolved');
+					}),
+					dfd.callback(function(error: Error) {
+						assert.equal(error.message, 'Objects already exist in store', 'Didn\'t reject with appropriate error message');
+					}));
 			}
 		},
 
@@ -117,6 +134,22 @@ registerSuite({
 					assert.deepEqual(storeData, patches.map((patchObj, i) => patchObj.patch.apply(copy[i])),
 						'Should have patched all items');
 				}).then(dfd.resolve);
+			},
+
+			'should fail when patch is not applicable.'(this: any) {
+				const { dfd, store } = getStoreAndDfd(this);
+				const operation = createOperation(OperationType.Replace, ['prop1'], 2);
+				const patch = createPatch([operation]);
+
+				store.patch({ id: '1', patch }).then(
+					dfd.rejectOnError(function () {
+						assert(false, 'Should not have resolved');
+					}),
+					dfd.callback(function(error: Error) {
+						assert.equal(error.message, 'Cannot replace undefined path: prop1 on object',
+								'Didn\'t reject with appropriate error message');
+					})
+				);
 			}
 		},
 		'delete': {
@@ -134,6 +167,23 @@ registerSuite({
 				store.fetch().then(dfd.callback(function(data: ItemType[]) {
 					assert.deepEqual(data, [], 'Didn\'t delete items');
 				}));
+			},
+
+			'should fail when storage deletion fails.'(this: any) {
+				const dfd = this.async(1000);
+
+				const storage = createInMemoryStorage();
+				sinon.stub(storage, 'delete').returns(Promise.reject(Error('failed')));
+				const store = createStore({ storage });
+
+				store.delete(ids[0]).then(
+					dfd.rejectOnError(function () {
+						assert(false, 'Should not have resolved');
+					}),
+					dfd.callback(function(error: Error) {
+						assert.equal(error.message, 'failed', 'Didn\'t reject with appropriate error message');
+					})
+				);
 			}
 		}
 	},
