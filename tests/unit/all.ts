@@ -5,6 +5,7 @@ import './query/filter';
 import './query/sort';
 import './query/StoreRange';
 import './query/createQuery';
+import './storage/createInMemoryStorage';
 import './store/createStore';
 import './store/createSubcollectionStore';
 import './store/mixins/createObservableStoreMixin';
