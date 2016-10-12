@@ -79,9 +79,12 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<IdObject, 
 
 	get(this: Storage<{}, {}>, ids: string[]): Promise<{}[]> {
 		const state = instanceStateMap.get(this);
-		return Promise.resolve(ids.map(function(id) {
-			return state.data[state.index.get(id)];
-		}));
+		return Promise.resolve(ids.reduce(function(prev, next) {
+			if (state.index.has(next)) {
+				prev.push( state.data[state.index.get(next)] );
+			};
+			return prev;
+		}, []));
 	},
 
 	put(this: Storage<{}, {}>, items: {}[], options?: CrudOptions): Promise<UpdateResults<{}>> {
@@ -105,7 +108,7 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<IdObject, 
 			}
 		});
 		if (oldIndices.length && options && options.rejectOverwrite) {
-			return Promise.reject(Error('Objects already exist in store'));
+			return Promise.reject(new Error('Objects already exist in store'));
 		}
 
 		updatedItems.forEach(function(item, index) {
@@ -175,14 +178,18 @@ const createInMemoryStorage: InMemoryStorageFactory = compose<Storage<IdObject, 
 		});
 
 		// If there is a source, the data has already been patched so we only need to sort it
-		const updatedItems = filteredUpdates.map(function(update, index) {
-			return update.patch.apply(state.data[oldIndices[index]]);
-		});
+		try {
+			const updatedItems = filteredUpdates.map(function(update, index) {
+				return update.patch.apply(state.data[oldIndices[index]]);
+			});
 
-		return Promise.resolve({
-			successfulData: updatedItems,
-			type: StoreOperation.Patch
-		});
+			return Promise.resolve({
+				successfulData: updatedItems,
+				type: StoreOperation.Patch
+			});
+		} catch (error) {
+			return Promise.reject(error);
+		}
 	},
 
 	isUpdate(this: Storage<{}, {}>, item: {}): Promise<{ isUpdate: boolean; item: {}; id: string }> {

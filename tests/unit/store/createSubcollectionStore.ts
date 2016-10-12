@@ -60,7 +60,7 @@ registerSuite({
 				Subcollection.add(data[0]);
 				Subcollection.delete(data[0].id);
 				store.fetch().then(function(results) {
-					assert.equal(results.length, 0, 'Didn\'t delete item from source');
+					assert.lengthOf(results, 0, 'Didn\'t delete item from source');
 				}).then(dfd.resolve);
 			},
 
@@ -79,6 +79,13 @@ registerSuite({
 				store.add(data[0]);
 				Subcollection.fetch().then(function(results) {
 					assert.deepEqual(results, [ data[0] ], 'Didn\'t fetch items from source');
+				}).then(dfd.resolve);
+			},
+			createId(this: any) {
+				const { dfd, store, Subcollection } = getStoreAndDfd(this);
+				Subcollection.createId();
+				store.createId().then(function(id) {
+					assert.strictEqual(id, '2');
 				}).then(dfd.resolve);
 			}
 		};

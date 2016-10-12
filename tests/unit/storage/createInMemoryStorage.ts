@@ -127,6 +127,14 @@ registerSuite({
 			storage.get(['1', '3']).then(function(items) {
 				assert.deepEqual(items, [ data[0], data[2] ]);
 			}).then(dfd.resolve);
+		},
+		'Should only get existing items back.'(this: any) {
+			const { dfd, storage, data } = getStorageAndDfd(this);
+			storage.add(data);
+			const idNotExist = '4';
+			storage.get(['1', '3', idNotExist]).then(function(items) {
+				assert.deepEqual(items, [ data[0], data[2] ]);
+			}).then(dfd.resolve);
 		}
 	},
 
@@ -190,9 +198,7 @@ registerSuite({
 					nestedProperty: {
 						value: nestedValue + 2
 					}
-
 				};
-
 			});
 
 			storage.add(data);

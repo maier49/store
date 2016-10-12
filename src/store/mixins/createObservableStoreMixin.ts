@@ -1,6 +1,8 @@
 import { CrudOptions, Store, StoreOptions } from '../createStore';
 import { Observable, Observer } from 'rxjs';
 import WeakMap from 'dojo-shim/WeakMap';
+import Map from 'dojo-shim/Map';
+import Promise from 'dojo-shim/Promise';
 import { StoreObservable } from '../createStoreObservable';
 import { UpdateResults } from '../../storage/createInMemoryStorage';
 import { SubcollectionStore } from '../createSubcollectionStore';
@@ -36,7 +38,6 @@ export type ObserverSetEntry<T> = { observes: Set<string>; observer: Observer<It
 export interface ObservableStoreState<T> {
 	fetchAroundUpdates: boolean;
 	itemObservers: Map<string, (Observer<T> | ObserverSetEntry<T>)[]>;
-	toRemoveIndices: number[];
 	observers: Observer<StoreDelta<T>>[];
 	storeObservable: Observable<StoreDelta<T>>;
 	updates: T[];
@@ -69,11 +70,8 @@ function sendUpdates<T, O extends CrudOptions, U extends UpdateResults<T>>(
 		state.observers.forEach(function(observer: Observer<StoreDelta<T>>) {
 			observer.next(storeDelta);
 		});
-
-		state.toRemoveIndices.splice(0).sort().reverse().forEach(function(removeIndex: number) {
-			state.observers.splice(removeIndex, 1);
-		});
 	}
+
 	after.then(function(data?: T[]) {
 		send(data);
 	});
@@ -324,9 +322,6 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 			const storeObservable = new Observable<StoreDelta<T>>(function(this: ObservableStoreMixin<T>, observer: Observer<StoreDelta<T>>) {
 				const state = instanceStateMap.get(this);
 				state.observers.push(observer);
-				return () => {
-					return state.toRemoveIndices.push(state.observers.indexOf(observer));
-				};
 			}.bind(instance));
 			const state: ObservableStoreState<T> = {
 				fetchAroundUpdates: Boolean(options.fetchAroundUpdates),
@@ -334,7 +329,6 @@ function createObservableStoreMixin<T, O extends CrudOptions, U extends UpdateRe
 					sendUpdates();
 				},
 				itemObservers: itemObservers,
-				toRemoveIndices: [],
 				observers: [],
 				storeObservable: storeObservable,
 				updates: [],

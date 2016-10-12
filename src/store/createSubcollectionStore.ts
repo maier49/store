@@ -1,6 +1,7 @@
 import createStore, { StoreOptions, CrudOptions, Store, PatchArgument } from './createStore';
 import { UpdateResults } from '../storage/createInMemoryStorage';
 import { ComposeFactory } from 'dojo-compose/compose';
+import Promise from 'dojo-shim/Promise';
 import WeakMap from 'dojo-shim/WeakMap';
 import { StoreObservable } from './createStoreObservable';
 import { Query } from '../query/createQuery';
